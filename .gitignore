@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+coverage/
+
+/backend/.env
+/frontend/.env
+!/backend/.env.example
+!/frontend/.env.example
