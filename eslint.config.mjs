@@ -11,6 +11,7 @@ export default defineConfig([
       '**/build/**',
       '**/coverage/**',
       '**/.next/**',
+      '**/.react-router/**',
     ],
   },
   {

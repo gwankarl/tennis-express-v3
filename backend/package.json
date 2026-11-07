@@ -3,6 +3,29 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --project tsconfig.json"
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --project tsconfig.json",
+    "db:check": "tsx scripts/check-db.ts",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate:dev": "drizzle-kit migrate --config=drizzle.dev.config.ts",
+    "db:migrate:test": "drizzle-kit migrate --config=drizzle.test.config.ts",
+    "test": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^9.9.3",
+    "@fastify/swagger-ui": "^5.2.6",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15",
+    "vitest": "^5.1.0"
   }
 }

@@ -27,21 +27,21 @@ Paths below are planned conventions. Create directories as features need them. K
 
 ### Backend
 
-| Path | Contents |
-| --- | --- |
-| `backend/src/app.ts` | Compose dependencies, register plugins and routes, and return the Fastify app without starting a listener. |
-| `backend/src/server.ts` | Load configuration, start the server, and handle shutdown. |
-| `backend/src/config/env.ts` | Load and validate backend environment settings. |
-| `backend/src/http/` | Shared HTTP contracts, error handling, request context, route mounting, and reusable guards. |
-| `backend/src/modules/<module>/` | Feature routes, schemas, services, repositories, Drizzle tables, and types. |
-| `backend/src/infrastructure/` | Database client and technical adapters for logging, email, storage, and payment providers. |
-| `backend/src/jobs/` | Schedule and run jobs. Business behavior lives in the owning module. |
-| `backend/src/shared/` | Small cross-module utilities and value types, such as errors, money, and pagination. |
-| `backend/migrations/` | Reviewed, versioned SQL migrations. |
-| `backend/scripts/` | Development and maintenance entry points. |
-| `backend/tests/unit/` | Isolated business rules and utilities. Mirror the relevant source paths. |
-| `backend/tests/integration/` | API wiring with Fastify injection and database-backed behavior. Keep database-dependent suites separately runnable. |
-| `backend/tests/helpers/` | Test app factories, synthetic fixtures, and guarded test database setup. |
+| Path                            | Contents                                                                                                            |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `backend/src/app.ts`            | Compose dependencies, register plugins and routes, and return the Fastify app without starting a listener.          |
+| `backend/src/server.ts`         | Load configuration, start the server, and handle shutdown.                                                          |
+| `backend/src/config/env.ts`     | Load and validate backend environment settings.                                                                     |
+| `backend/src/http/`             | Shared HTTP contracts, error handling, request context, route mounting, and reusable guards.                        |
+| `backend/src/modules/<module>/` | Feature routes, schemas, services, repositories, Drizzle tables, and types.                                         |
+| `backend/src/infrastructure/`   | Database client and technical adapters for logging, email, storage, and payment providers.                          |
+| `backend/src/jobs/`             | Schedule and run jobs. Business behavior lives in the owning module.                                                |
+| `backend/src/shared/`           | Small cross-module utilities and value types, such as errors, money, and pagination.                                |
+| `backend/migrations/`           | Reviewed, versioned SQL migrations.                                                                                 |
+| `backend/scripts/`              | Development and maintenance entry points.                                                                           |
+| `backend/tests/unit/`           | Isolated business rules and utilities. Mirror the relevant source paths.                                            |
+| `backend/tests/integration/`    | API wiring with Fastify injection and database-backed behavior. Keep database-dependent suites separately runnable. |
+| `backend/tests/helpers/`        | Test app factories, synthetic fixtures, and guarded test database setup.                                            |
 
 - Planned modules include health, identity, seller-onboarding, sellers, catalog, listings, inventory, inquiries, orders, payments, fulfillment, complaints, reviews, notifications, and audit.
 - Use `<feature>.routes.ts`, `.schemas.ts`, `.service.ts`, `.repository.ts`, `.table.ts`, and `.types.ts` as needed. Routes handle HTTP and runtime schemas define boundary validation. Services own business rules, resource-level authorization, and transaction coordination. Repositories own queries. Add a controller layer only when complexity justifies it.
@@ -49,20 +49,20 @@ Paths below are planned conventions. Create directories as features need them. K
 
 ### Frontend
 
-| Path | Contents |
-| --- | --- |
-| `frontend/app/root.tsx` | Root document, application shell, and root error boundary. |
-| `frontend/app/routes.ts` | React Router route configuration. |
-| `frontend/app/routes/` | Route modules for pages and layouts, including their loaders, actions, and error boundaries. |
-| `frontend/app/features/<feature>/` | Feature-specific components, hooks, and UI logic shared within a feature. |
-| `frontend/app/components/` | Reusable components shared across features. |
-| `frontend/app/.server/` | Server-only environment validation, backend API transport, and shared session or request-protection helpers. |
-| `frontend/app/styles/` | Shared styles and design tokens as needed. |
-| `frontend/public/` | Static assets served directly to browsers. |
-| `frontend/tests/unit/` | Isolated helpers, server utilities, and component tests. |
-| `frontend/tests/integration/` | Loader, action, and route behavior with controlled dependencies. |
-| `frontend/tests/helpers/` | Shared render utilities, test setup, synthetic fixtures, and API mocks. |
-| `frontend/tests/e2e/` | Browser workflow tests when scheduled. |
+| Path                               | Contents                                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `frontend/app/root.tsx`            | Root document, application shell, and root error boundary.                                                   |
+| `frontend/app/routes.ts`           | React Router route configuration.                                                                            |
+| `frontend/app/routes/`             | Route modules for pages and layouts, including their loaders, actions, and error boundaries.                 |
+| `frontend/app/features/<feature>/` | Feature-specific components, hooks, and UI logic shared within a feature.                                    |
+| `frontend/app/components/`         | Reusable components shared across features.                                                                  |
+| `frontend/app/.server/`            | Server-only environment validation, backend API transport, and shared session or request-protection helpers. |
+| `frontend/app/styles/`             | Shared styles and design tokens as needed.                                                                   |
+| `frontend/public/`                 | Static assets served directly to browsers.                                                                   |
+| `frontend/tests/unit/`             | Isolated helpers, server utilities, and component tests.                                                     |
+| `frontend/tests/integration/`      | Loader, action, and route behavior with controlled dependencies.                                             |
+| `frontend/tests/helpers/`          | Shared render utilities, test setup, synthetic fixtures, and API mocks.                                      |
+| `frontend/tests/e2e/`              | Browser workflow tests when scheduled.                                                                       |
 
 - Mirror relevant `app/` paths in frontend unit and integration tests. Use `*.test.ts` or `*.test.tsx` for workspace tests and `*.spec.ts` for browser tests. Keep browser specs outside Vitest discovery.
 - Use the versioned backend API through the frontend’s server-side transport. Keep backend models, services, and infrastructure outside the frontend import graph. Return only safe page data from loaders and actions.

@@ -7,3 +7,4 @@ coverage/
 /frontend/.env
 !/backend/.env.example
 !/frontend/.env.example
+frontend/.react-router/

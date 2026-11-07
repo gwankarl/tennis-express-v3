@@ -4,3 +4,4 @@ build/
 coverage/
 .next/
 package-lock.json
+frontend/.react-router/
