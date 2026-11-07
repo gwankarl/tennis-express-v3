@@ -1,5 +1,4 @@
-/**
- * Re-export Drizzle table definitions from their owning feature modules here.
- * Keep each table definition in its module.
- */
-export {};
+export * from '../../modules/identity/accounts/user.table.js';
+export * from '../../modules/identity/passwords/credentials.table.js';
+export * from '../../modules/identity/sessions/session.table.js';
+export * from '../../modules/identity/token.table.js';

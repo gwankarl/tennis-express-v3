@@ -7,6 +7,7 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --project tsconfig.json",
     "db:check": "tsx scripts/check-db.ts",
+    "email:send-samples": "tsx scripts/send-email-samples.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate:dev": "drizzle-kit migrate --config=drizzle.dev.config.ts",
     "db:migrate:test": "drizzle-kit migrate --config=drizzle.test.config.ts",
@@ -14,11 +15,14 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.9.3",
     "@fastify/swagger-ui": "^5.2.6",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.8",
-    "pg": "^8.23.1"
+    "nodemailer": "^10.3.1",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

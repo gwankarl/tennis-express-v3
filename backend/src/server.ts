@@ -2,6 +2,7 @@ import { buildApp } from './app.js';
 import { type BackendConfig, EnvValidationError, loadBackendEnv, parseEnv } from './config/env.js';
 import type { FastifyInstance } from 'fastify';
 import { createDatabaseClient, type DatabaseClient } from './infrastructure/database/client.js';
+import { createSmtpEmailSender } from './infrastructure/email/smtp-email-sender.js';
 
 function registerShutdownHandlers(app: FastifyInstance): void {
   let shuttingDown = false;
@@ -67,7 +68,16 @@ async function startServer(): Promise<void> {
 
   try {
     database = createDatabaseClient(config.databaseUrl);
-    app = buildApp({ database });
+    const emailSender =
+      config.email.enabled && config.email.smtp
+        ? createSmtpEmailSender(config.email.smtp)
+        : undefined;
+
+    app = buildApp({
+      database,
+      emailSender,
+      frontendOrigin: config.email.frontendOrigin,
+    });
 
     database.pool.on('error', (error) => {
       app?.log.error({ errorCode: getErrorCode(error) }, 'Idle PostgreSQL connection failed');

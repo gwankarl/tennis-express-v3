@@ -47,6 +47,17 @@ Paths below are planned conventions. Create directories as features need them. K
 - Use `<feature>.routes.ts`, `.schemas.ts`, `.service.ts`, `.repository.ts`, `.table.ts`, and `.types.ts` as needed. Routes handle HTTP and runtime schemas define boundary validation. Services own business rules, resource-level authorization, and transaction coordination. Repositories own queries. Add a controller layer only when complexity justifies it.
 - Modules own their Drizzle tables. `backend/src/infrastructure/database/schema.ts` collects table exports for tooling. Admin endpoints belong to the relevant business module. Use explicit interfaces across modules and one transaction for operations that must succeed or fail together.
 
+#### Identity module layout
+
+- Put user tables, email normalization, account eligibility, and registration under `backend/src/modules/identity/accounts/`.
+- Put email-verification tokens, confirmation, resend logic, and verification email content under `backend/src/modules/identity/verification/`.
+- Put password credentials, Argon2id helpers, reset tokens, recovery, password changes, and recovery email content under `backend/src/modules/identity/passwords/`.
+- Put session persistence, expiry, revocation, login, logout, and current-user lookup under `backend/src/modules/identity/sessions/`.
+- Keep shared token generation, digest, and expiry helpers in `backend/src/modules/identity/token.ts`. Keep the shared purpose-specific token table in `backend/src/modules/identity/token.table.ts`.
+- Mirror identity source paths under `backend/tests/unit/modules/identity/`; keep database-backed identity checks in `backend/tests/integration/`.
+- Keep the SMTP adapter in `backend/src/infrastructure/email/`. Identity workflows own email content and call the infrastructure adapter; they do not own SMTP transport.
+- Create workflow folders when their workflows are implemented.
+
 ### Frontend
 
 | Path                               | Contents                                                                                                     |
