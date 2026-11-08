@@ -56,7 +56,7 @@ export default function AccountPage() {
             )}
 
             <Link
-              className="mt-8 inline-flex font-semibold text-forest underline"
+              className="mt-8 mr-1 inline-flex font-semibold text-forest underline"
               to="/account/profile"
             >
               Edit profile
