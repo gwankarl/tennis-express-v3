@@ -9,6 +9,7 @@ import { generateRequestId, setRequestIdHeader } from './http/request-context.js
 import type { DatabaseClient } from './infrastructure/database/client.js';
 import { createLoggerOptions } from './infrastructure/logging/logger.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
+import { registerVerificationRoutes } from './modules/identity/verification/verification.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -79,6 +80,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
 
     registerRegistrationRoutes(app);
+    registerVerificationRoutes(app);
   });
 
   return app;
