@@ -26,12 +26,20 @@ vi.mock('~/.server/session.js', () => ({
 import LoginPage from '~/routes/login.js';
 import AccountPage from '~/routes/account.js';
 
-function renderLogin(action: () => unknown = () => undefined) {
+function renderLogin(
+  action: () => unknown = () => undefined,
+  options: { passwordChanged?: boolean } = {},
+) {
   const router = createMemoryRouter(
     [
       {
         path: '/login',
-        loader: () => ({ csrfToken: 'csrf-test', returnTo: '/account' }),
+        loader: () => ({
+          csrfToken: 'csrf-test',
+          returnTo: '/account',
+          passwordReset: false,
+          passwordChanged: options.passwordChanged ?? false,
+        }),
         action,
         Component: LoginPage,
       },
@@ -58,6 +66,13 @@ function renderAccount(loaderData: Record<string, unknown>) {
 }
 
 describe('sign-in and account UI', () => {
+  it('shows the password-change confirmation on sign-in', async () => {
+    renderLogin(undefined, { passwordChanged: true });
+    expect(
+      await screen.findByText('Your password has been changed. Sign in with your new password.'),
+    ).toHaveAttribute('role', 'status');
+  });
+
   it('renders labeled sign-in fields and a safe invalid-credentials alert', async () => {
     renderLogin(() => ({ status: 'invalid' }));
 
@@ -73,7 +88,9 @@ describe('sign-in and account UI', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Those sign-in details didn’t match');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Those sign-in details didn’t match',
+    );
     expect(screen.queryByText('private password')).not.toBeInTheDocument();
   });
 
@@ -96,7 +113,9 @@ describe('sign-in and account UI', () => {
   it('shows a service-unavailable message on sign-in failure', async () => {
     renderLogin(() => ({ status: 'unavailable' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-in is temporarily unavailable');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Sign-in is temporarily unavailable',
+    );
   });
 
   it('shows only the current account email and a sign-out form', async () => {
@@ -108,6 +127,10 @@ describe('sign-in and account UI', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your account' })).toBeInTheDocument();
     expect(screen.getByText('player@example.test')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument();
+    expect(screen.getByLabelText('New password')).toBeInTheDocument();
+    expect(screen.getByText('Use 15–128 characters. A passphrase works well.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 

@@ -11,7 +11,11 @@ vi.mock('~/.server/api-client.js', () => {
     constructor(
       readonly kind: string,
       message: string,
-      readonly options: { status?: number; errorCode?: string } = {},
+      readonly options: {
+        status?: number;
+        errorCode?: string;
+        details?: { field: string; rule: string }[];
+      } = {},
     ) {
       super(message);
     }
@@ -20,6 +24,9 @@ vi.mock('~/.server/api-client.js', () => {
     }
     get errorCode() {
       return this.options.errorCode;
+    }
+    get details() {
+      return this.options.details;
     }
   }
   return { ApiRequestError, requestJson: requestJsonMock };
@@ -40,12 +47,14 @@ const config = {
   csrfSecret: 'auth-action-test-secret-with-over-32-bytes',
 };
 
-function makeLoginRequest(options: {
-  originHeader?: string;
-  csrfToken?: string;
-  returnTo?: string;
-  csrf?: boolean;
-} = {}): Request {
+function makeLoginRequest(
+  options: {
+    originHeader?: string;
+    csrfToken?: string;
+    returnTo?: string;
+    csrf?: boolean;
+  } = {},
+): Request {
   const headers = new Headers();
   const issuedToken = issueCsrfToken(new Request(origin), headers, config);
   const anonCookie = headers.get('set-cookie')?.split(';', 1)[0];
@@ -69,18 +78,28 @@ function makeLoginRequest(options: {
   });
 }
 
-function makeLogoutRequest(options: { originHeader?: string; csrfToken?: string } = {}): Request {
+function makeAccountRequest(
+  intent: 'logout' | 'change-password',
+  options: { originHeader?: string; csrfToken?: string; csrf?: boolean } = {},
+): Request {
   const csrfToken =
-    options.csrfToken ?? issueSessionCsrfToken(new Request(`${origin}/account`), sessionToken, config);
+    options.csrfToken ??
+    issueSessionCsrfToken(new Request(`${origin}/account`), sessionToken, config);
+  const form = new URLSearchParams({ intent });
+  if (intent === 'change-password') {
+    form.set('currentPassword', 'my existing private password');
+    form.set('newPassword', 'a new private tennis passphrase');
+  }
+  if (options.csrf !== false) form.set('csrfToken', csrfToken);
 
   return new Request(`${origin}/account`, {
     method: 'POST',
     headers: {
-      origin: options.originHeader ?? origin,
+      ...(options.originHeader === undefined ? { origin } : { origin: options.originHeader }),
       cookie: `tx_session=${sessionToken}`,
       'content-type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ csrfToken }),
+    body: form,
   });
 }
 
@@ -199,7 +218,7 @@ describe('login and logout actions', () => {
 
   it('revokes the current session and clears its cookie after a protected sign-out', async () => {
     requestJsonMocked.mockResolvedValue({ status: 'logged_out' } as never);
-    const request = makeLogoutRequest();
+    const request = makeAccountRequest('logout');
     const result = await accountAction({ request } as Parameters<typeof accountAction>[0]);
 
     expect(result).toBeInstanceOf(Response);
@@ -218,17 +237,94 @@ describe('login and logout actions', () => {
 
   it('does not call logout on rejected requests and keeps the cookie on a temporary failure', async () => {
     const blocked = await accountAction({
-      request: makeLogoutRequest({ originHeader: 'https://attacker.example' }),
+      request: makeAccountRequest('logout', { originHeader: 'https://attacker.example' }),
     } as Parameters<typeof accountAction>[0]);
     expect(resultData(blocked)).toMatchObject({ status: 'blocked' });
     expect(requestJsonMocked).not.toHaveBeenCalled();
 
     requestJsonMocked.mockRejectedValue(new ApiRequestError('timeout', 'private transport data'));
     const unavailable = await accountAction({
-      request: makeLogoutRequest(),
+      request: makeAccountRequest('logout'),
     } as Parameters<typeof accountAction>[0]);
     expect(resultData(unavailable)).toMatchObject({ status: 'unavailable' });
     expect(JSON.stringify(unavailable)).not.toContain(sessionToken);
     expect(JSON.stringify(unavailable)).not.toContain('private transport data');
+  });
+
+  it('submits a protected password change and clears the cookie on success', async () => {
+    requestJsonMocked.mockResolvedValue({ status: 'changed' } as never);
+    const request = makeAccountRequest('change-password');
+    const result = await accountAction({ request } as Parameters<typeof accountAction>[0]);
+
+    expect(result).toBeInstanceOf(Response);
+    const response = result as Response;
+    expect(response.headers.get('location')).toBe('/login?passwordChanged=success');
+    expect(response.headers.get('set-cookie')).toContain('tx_session=');
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(requestJsonMocked).toHaveBeenCalledWith(
+      '/auth/change-password',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: `Bearer ${sessionToken}` },
+        body: {
+          currentPassword: 'my existing private password',
+          newPassword: 'a new private tennis passphrase',
+        },
+        signal: request.signal,
+      }),
+    );
+    expect(JSON.stringify(result)).not.toContain('my existing private password');
+    expect(JSON.stringify(result)).not.toContain('a new private tennis passphrase');
+  });
+
+  it.each([
+    ['cross-origin', { originHeader: 'https://attacker.example' }],
+    ['missing CSRF', { csrf: false }],
+    ['mismatched CSRF', { csrfToken: 'v1.1.invalid' }],
+  ])('blocks %s password changes before the backend call', async (_label, options) => {
+    const result = await accountAction({
+      request: makeAccountRequest('change-password', options),
+    } as Parameters<typeof accountAction>[0]);
+    expect(resultData(result)).toMatchObject({ status: 'blocked' });
+    expect(requestJsonMocked).not.toHaveBeenCalled();
+  });
+
+  it('returns safe password field errors without echoing either password', async () => {
+    requestJsonMocked.mockRejectedValue(
+      new ApiRequestError('http', 'private backend detail', {
+        status: 400,
+        errorCode: 'VALIDATION_ERROR',
+        details: [
+          { field: 'currentPassword', rule: 'incorrect' },
+          { field: 'newPassword', rule: 'too_short' },
+        ],
+      }),
+    );
+    const result = await accountAction({
+      request: makeAccountRequest('change-password'),
+    } as Parameters<typeof accountAction>[0]);
+
+    expect(resultData(result)).toMatchObject({
+      status: 'invalid',
+      fieldErrors: {
+        currentPassword: 'Check your current password and try again.',
+        newPassword: 'Use at least 15 characters.',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('my existing private password');
+    expect(JSON.stringify(result)).not.toContain('a new private tennis passphrase');
+    expect(JSON.stringify(result)).not.toContain('private backend detail');
+  });
+
+  it('keeps the cookie and returns a safe retry message during a password-change outage', async () => {
+    requestJsonMocked.mockRejectedValue(
+      new ApiRequestError('timeout', 'private transport details'),
+    );
+    const result = await accountAction({
+      request: makeAccountRequest('change-password'),
+    } as Parameters<typeof accountAction>[0]);
+    expect(resultData(result)).toMatchObject({ status: 'unavailable' });
+    expect(JSON.stringify(result)).not.toContain('private transport details');
+    expect(requestJsonMocked).toHaveBeenCalledTimes(1);
   });
 });

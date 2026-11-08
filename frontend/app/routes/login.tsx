@@ -57,7 +57,8 @@ export function loader({ request }: Route.LoaderArgs) {
   const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'));
 
   const passwordReset = new URL(request.url).searchParams.get('passwordReset') === 'success';
-  return data({ csrfToken, returnTo, passwordReset }, { headers });
+  const passwordChanged = new URL(request.url).searchParams.get('passwordChanged') === 'success';
+  return data({ csrfToken, returnTo, passwordReset, passwordChanged }, { headers });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -134,7 +135,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function LoginPage() {
-  const { csrfToken, returnTo, passwordReset } = useLoaderData<typeof loader>();
+  const { csrfToken, returnTo, passwordReset, passwordChanged } = useLoaderData<typeof loader>();
 
   const actionData = useActionData<typeof action>() as LoginActionData | undefined;
   const isSubmitting = useNavigation().state === 'submitting';
@@ -151,6 +152,14 @@ export default function LoginPage() {
             role="status"
           >
             Your password has been reset. Sign in with your new password.
+          </p>
+        )}
+        {passwordChanged && (
+          <p
+            className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900"
+            role="status"
+          >
+            Your password has been changed. Sign in with your new password.
           </p>
         )}
 

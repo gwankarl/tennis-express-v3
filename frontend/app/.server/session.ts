@@ -172,7 +172,7 @@ export function safeReturnTo(value: string | null | undefined): string {
     !value.startsWith('/') ||
     value.startsWith('//') ||
     value.includes('\\') ||
-    /[\u0000-\u001f]/u.test(value)
+    Array.from(value).some((character) => (character.codePointAt(0) ?? 0) <= 0x1f)
   ) {
     return '/account';
   }
