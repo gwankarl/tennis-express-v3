@@ -11,6 +11,7 @@ import { createLoggerOptions } from './infrastructure/logging/logger.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
 import { registerVerificationRoutes } from './modules/identity/verification/verification.routes.js';
 import { registerSessionAuthRoutes } from './modules/identity/sessions/auth.routes.js';
+import { registerPasswordRecoveryRoutes } from './modules/identity/passwords/password-recovery.routes.js';
 import { registerAuthenticationContext } from './http/guards/authenticate.js';
 
 declare module 'fastify' {
@@ -86,6 +87,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerRegistrationRoutes(app);
     registerVerificationRoutes(app);
     registerSessionAuthRoutes(app);
+    registerPasswordRecoveryRoutes(app);
   });
 
   return app;
