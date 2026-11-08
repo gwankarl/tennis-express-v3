@@ -10,6 +10,7 @@ import type { DatabaseClient } from './infrastructure/database/client.js';
 import { createLoggerOptions } from './infrastructure/logging/logger.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
 import { registerVerificationRoutes } from './modules/identity/verification/verification.routes.js';
+import { registerAuthenticationContext } from './http/guards/authenticate.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -31,6 +32,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     genReqId: generateRequestId,
     requestIdHeader: false,
   });
+
+  registerAuthenticationContext(app);
 
   app.decorate('db', options.database?.db ?? null);
   app.decorate('emailSender', options.emailSender ?? null);

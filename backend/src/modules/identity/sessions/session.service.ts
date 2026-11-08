@@ -1,0 +1,249 @@
+import { and, eq, gt, isNull } from 'drizzle-orm';
+import type { DatabaseClient } from '../../../infrastructure/database/client.js';
+import { identityUsers } from '../accounts/user.table.js';
+import { digestIdentityToken, generateSessionToken } from '../token.js';
+import { identitySessions } from './session.table.js';
+
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const ABSOLUTE_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+export interface AuthenticatedSession {
+  sessionId: string;
+  userId: string;
+}
+
+export interface CreatedSession extends AuthenticatedSession {
+  /** Return this to the caller that needs to issue the credential. Never persist or log it. */
+  rawToken: string;
+  absoluteExpiresAt: Date;
+}
+
+type SessionTransaction = Parameters<Parameters<DatabaseClient['db']['transaction']>[0]>[0];
+
+export type SessionMutationExecutor = Pick<DatabaseClient['db'] | SessionTransaction, 'update'>;
+
+function assertValidDate(value: Date): void {
+  if (!Number.isFinite(value.getTime())) {
+    throw new RangeError('Session time must be a valid date.');
+  }
+}
+
+function isAccountEligible(status: string, emailVerifiedAt: Date | null): boolean {
+  return status === 'active' && emailVerifiedAt !== null;
+}
+
+/**
+ * Creates a session only for a currently active, verified account.
+ * The raw bearer token is returned once; only its digest is stored.
+ */
+export async function createSession(
+  db: DatabaseClient['db'],
+  userId: string,
+  now = new Date(),
+): Promise<CreatedSession | undefined> {
+  assertValidDate(now);
+
+  return db.transaction(async (transaction) => {
+    const users = await transaction
+      .select({
+        status: identityUsers.status,
+        emailVerifiedAt: identityUsers.emailVerifiedAt,
+      })
+      .from(identityUsers)
+      .where(eq(identityUsers.id, userId))
+      .for('update')
+      .limit(1);
+
+    const user = users[0];
+
+    if (!user || !isAccountEligible(user.status, user.emailVerifiedAt)) {
+      return undefined;
+    }
+
+    const { rawToken, digest } = generateSessionToken();
+    const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_LIFETIME_MS);
+    const idleExpiresAt = new Date(
+      Math.min(now.getTime() + IDLE_TIMEOUT_MS, absoluteExpiresAt.getTime()),
+    );
+
+    const sessions = await transaction
+      .insert(identitySessions)
+      .values({
+        userId,
+        tokenDigest: digest,
+        createdAt: now,
+        lastSeenAt: now,
+        idleExpiresAt,
+        absoluteExpiresAt,
+      })
+      .returning({ sessionId: identitySessions.id });
+
+    const session = sessions[0];
+
+    if (!session) {
+      throw new Error('Session creation did not return a session.');
+    }
+
+    return {
+      sessionId: session.sessionId,
+      userId,
+      rawToken,
+      absoluteExpiresAt,
+    };
+  });
+}
+
+/**
+ * Validates the bearer token, current account eligibility, and both expiry
+ * deadlines. Locks the user and session before renewing idle expiry so a
+ * concurrent revocation or expiry cannot be undone.
+ */
+export async function validateSession(
+  db: DatabaseClient['db'],
+  rawToken: string,
+  now = new Date(),
+): Promise<AuthenticatedSession | undefined> {
+  assertValidDate(now);
+
+  if (rawToken.length === 0) {
+    return undefined;
+  }
+
+  const digest = digestIdentityToken(rawToken);
+
+  return db.transaction(async (transaction) => {
+    // This read discovers the owner. The row is re-read under lock below.
+    const candidates = await transaction
+      .select({
+        sessionId: identitySessions.id,
+        userId: identitySessions.userId,
+      })
+      .from(identitySessions)
+      .where(eq(identitySessions.tokenDigest, digest))
+      .limit(1);
+
+    const candidate = candidates[0];
+
+    if (!candidate) {
+      return undefined;
+    }
+
+    // Keep the lock order stable: user first, then session.
+    const users = await transaction
+      .select({
+        status: identityUsers.status,
+        emailVerifiedAt: identityUsers.emailVerifiedAt,
+      })
+      .from(identityUsers)
+      .where(eq(identityUsers.id, candidate.userId))
+      .for('update')
+      .limit(1);
+
+    const user = users[0];
+
+    if (!user || !isAccountEligible(user.status, user.emailVerifiedAt)) {
+      return undefined;
+    }
+
+    const sessions = await transaction
+      .select({
+        sessionId: identitySessions.id,
+        userId: identitySessions.userId,
+        tokenDigest: identitySessions.tokenDigest,
+        idleExpiresAt: identitySessions.idleExpiresAt,
+        absoluteExpiresAt: identitySessions.absoluteExpiresAt,
+        revokedAt: identitySessions.revokedAt,
+      })
+      .from(identitySessions)
+      .where(
+        and(
+          eq(identitySessions.id, candidate.sessionId),
+          eq(identitySessions.userId, candidate.userId),
+          eq(identitySessions.tokenDigest, digest),
+        ),
+      )
+      .for('update')
+      .limit(1);
+
+    const session = sessions[0];
+
+    if (
+      !session ||
+      session.revokedAt !== null ||
+      now.getTime() >= session.idleExpiresAt.getTime() ||
+      now.getTime() >= session.absoluteExpiresAt.getTime()
+    ) {
+      return undefined;
+    }
+
+    const renewedIdleExpiry = new Date(
+      Math.min(now.getTime() + IDLE_TIMEOUT_MS, session.absoluteExpiresAt.getTime()),
+    );
+
+    const renewed = await transaction
+      .update(identitySessions)
+      .set({
+        lastSeenAt: now,
+        idleExpiresAt: renewedIdleExpiry,
+      })
+      .where(
+        and(
+          eq(identitySessions.id, session.sessionId),
+          isNull(identitySessions.revokedAt),
+          gt(identitySessions.idleExpiresAt, now),
+          gt(identitySessions.absoluteExpiresAt, now),
+        ),
+      )
+      .returning({ sessionId: identitySessions.id });
+
+    if (renewed.length !== 1) {
+      return undefined;
+    }
+
+    return {
+      sessionId: session.sessionId,
+      userId: session.userId,
+    };
+  });
+}
+
+/** Revokes one session owned by the supplied user. Repeated calls are harmless. */
+export async function revokeSession(
+  db: SessionMutationExecutor,
+  userId: string,
+  sessionId: string,
+  now = new Date(),
+): Promise<boolean> {
+  assertValidDate(now);
+
+  const revoked = await db
+    .update(identitySessions)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(identitySessions.id, sessionId),
+        eq(identitySessions.userId, userId),
+        isNull(identitySessions.revokedAt),
+      ),
+    )
+    .returning({ sessionId: identitySessions.id });
+
+  return revoked.length === 1;
+}
+
+/**
+ * Revokes all active sessions for a user. Accepts either the root Drizzle
+ * database or a transaction executor for atomic password-change workflows.
+ */
+export async function revokeAllSessionsForUser(
+  db: SessionMutationExecutor,
+  userId: string,
+  now = new Date(),
+): Promise<void> {
+  assertValidDate(now);
+
+  await db
+    .update(identitySessions)
+    .set({ revokedAt: now })
+    .where(and(eq(identitySessions.userId, userId), isNull(identitySessions.revokedAt)));
+}
