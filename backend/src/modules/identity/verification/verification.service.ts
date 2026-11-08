@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { DatabaseClient } from '../../../infrastructure/database/client.js';
 import { identityUsers } from '../accounts/user.table.js';
 import { identityCredentials } from '../passwords/credentials.table.js';
@@ -85,9 +85,8 @@ export async function verifyEmail(
       .limit(1);
 
     const token = tokens[0];
-    const now = new Date();
 
-    if (!token || token.consumedAt !== null || isTokenExpired(token.expiresAt, now)) {
+    if (!token || token.consumedAt !== null || isTokenExpired(token.expiresAt, new Date())) {
       return false;
     }
 
@@ -103,12 +102,34 @@ export async function verifyEmail(
       return false;
     }
 
+    // Password verification is deliberately expensive. Consume the selected
+    // token with a database-clock expiry check after that work, atomically with
+    // the account activation below.
+    const consumedAt = new Date();
+    const consumed = await transaction
+      .update(identityTokens)
+      .set({ consumedAt })
+      .where(
+        and(
+          eq(identityTokens.id, token.id),
+          eq(identityTokens.userId, user.id),
+          eq(identityTokens.purpose, 'email_verification'),
+          isNull(identityTokens.consumedAt),
+          gt(identityTokens.expiresAt, sql`clock_timestamp()`),
+        ),
+      )
+      .returning({ id: identityTokens.id });
+
+    if (consumed.length !== 1) {
+      return false;
+    }
+
     const updatedUsers = await transaction
       .update(identityUsers)
       .set({
         status: 'active',
-        emailVerifiedAt: now,
-        updatedAt: now,
+        emailVerifiedAt: consumedAt,
+        updatedAt: consumedAt,
       })
       .where(
         and(
@@ -127,7 +148,7 @@ export async function verifyEmail(
     // transaction as the account activation.
     await transaction
       .update(identityTokens)
-      .set({ consumedAt: now })
+      .set({ consumedAt })
       .where(
         and(
           eq(identityTokens.userId, user.id),

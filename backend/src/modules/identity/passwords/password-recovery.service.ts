@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { DatabaseClient } from '../../../infrastructure/database/client.js';
 import { identityUsers } from '../accounts/user.table.js';
 import { normalizeEmail } from '../accounts/email-normalization.js';
@@ -69,8 +69,12 @@ export async function createPasswordResetRequest(
 export async function resetPassword(
   db: DatabaseClient['db'],
   input: { token: string; password: string },
-  now = new Date(),
+  now?: Date,
 ): Promise<boolean> {
+  if (now && !Number.isFinite(now.getTime())) {
+    throw new RangeError('Password reset time must be a valid date.');
+  }
+
   if (!checkPasswordPolicy(input.password).valid) {
     return false;
   }
@@ -134,7 +138,9 @@ export async function resetPassword(
 
     const token = tokens[0];
 
-    if (!token || token.consumedAt !== null || isTokenExpired(token.expiresAt, now)) {
+    const checkedAt = now ?? new Date();
+
+    if (!token || token.consumedAt !== null || isTokenExpired(token.expiresAt, checkedAt)) {
       return false;
     }
 
@@ -151,17 +157,19 @@ export async function resetPassword(
 
     // Hash only after rate limiting and confirming a usable reset token.
     const passwordHash = await hashPassword(input.password);
+    const mutationAt = now ?? new Date();
+    const expiryCheck = now ?? sql`clock_timestamp()`;
 
     const consumed = await transaction
       .update(identityTokens)
-      .set({ consumedAt: now })
+      .set({ consumedAt: mutationAt })
       .where(
         and(
           eq(identityTokens.id, token.id),
           eq(identityTokens.userId, user.id),
           eq(identityTokens.purpose, 'password_reset'),
           isNull(identityTokens.consumedAt),
-          gt(identityTokens.expiresAt, now),
+          gt(identityTokens.expiresAt, expiryCheck),
         ),
       )
       .returning({ id: identityTokens.id });
@@ -172,7 +180,7 @@ export async function resetPassword(
 
     const updatedCredentials = await transaction
       .update(identityCredentials)
-      .set({ passwordHash, updatedAt: now })
+      .set({ passwordHash, updatedAt: mutationAt })
       .where(eq(identityCredentials.userId, user.id))
       .returning({ userId: identityCredentials.userId });
 
@@ -183,7 +191,7 @@ export async function resetPassword(
     // Other reset links for this account become unusable in this transaction.
     await transaction
       .update(identityTokens)
-      .set({ consumedAt: now })
+      .set({ consumedAt: mutationAt })
       .where(
         and(
           eq(identityTokens.userId, user.id),
@@ -193,7 +201,7 @@ export async function resetPassword(
       );
 
     // The user lock serializes this with login and session validation.
-    await revokeAllSessionsForUser(transaction, user.id, now);
+    await revokeAllSessionsForUser(transaction, user.id, mutationAt);
 
     return true;
   });

@@ -177,6 +177,32 @@ describe('identity session service', () => {
     expect(result).toBeUndefined();
   });
 
+  it('rejects a session that expires while waiting for the user lock', async () => {
+    const userId = await createUser();
+    const expiresAt = new Date(Date.now() + 500);
+    const createdAt = new Date(expiresAt.getTime() - 30 * 60 * 1000);
+    const created = await createSession(getDatabase().db, userId, createdAt);
+
+    if (!created) throw new Error('Expected session creation to succeed.');
+
+    const lockClient = await getDatabase().pool.connect();
+    let validation: ReturnType<typeof validateSession> | undefined;
+
+    try {
+      await lockClient.query('BEGIN');
+      await lockClient.query('SELECT id FROM identity_users WHERE id = $1 FOR UPDATE', [userId]);
+
+      validation = validateSession(getDatabase().db, created.rawToken);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      await lockClient.query('COMMIT');
+      expect(await validation).toBeUndefined();
+    } finally {
+      await lockClient.query('ROLLBACK').catch(() => undefined);
+      lockClient.release();
+    }
+  });
+
   it('does not renew an expired session under concurrent activity', async () => {
     const userId = await createUser();
     const created = await createSession(getDatabase().db, userId, baseTime);

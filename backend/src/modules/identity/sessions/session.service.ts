@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { identityCredentials } from '../passwords/credentials.table.js';
 import type { DatabaseClient } from '../../../infrastructure/database/client.js';
 import { identityUsers } from '../accounts/user.table.js';
@@ -115,9 +115,9 @@ export async function createSession(
 export async function validateSession(
   db: DatabaseClient['db'],
   rawToken: string,
-  now = new Date(),
+  now?: Date,
 ): Promise<AuthenticatedSession | undefined> {
-  assertValidDate(now);
+  if (now) assertValidDate(now);
 
   if (rawToken.length === 0) {
     return undefined;
@@ -180,32 +180,36 @@ export async function validateSession(
       .limit(1);
 
     const session = sessions[0];
+    // Capture wall-clock time only after acquiring both row locks. A request
+    // that waited past expiry must not validate using its earlier start time.
+    const checkedAt = now ?? new Date();
+    const databaseTime = now ?? sql`clock_timestamp()`;
 
     if (
       !session ||
       session.revokedAt !== null ||
-      now.getTime() >= session.idleExpiresAt.getTime() ||
-      now.getTime() >= session.absoluteExpiresAt.getTime()
+      checkedAt.getTime() >= session.idleExpiresAt.getTime() ||
+      checkedAt.getTime() >= session.absoluteExpiresAt.getTime()
     ) {
       return undefined;
     }
 
     const renewedIdleExpiry = new Date(
-      Math.min(now.getTime() + IDLE_TIMEOUT_MS, session.absoluteExpiresAt.getTime()),
+      Math.min(checkedAt.getTime() + IDLE_TIMEOUT_MS, session.absoluteExpiresAt.getTime()),
     );
 
     const renewed = await transaction
       .update(identitySessions)
       .set({
-        lastSeenAt: now,
+        lastSeenAt: checkedAt,
         idleExpiresAt: renewedIdleExpiry,
       })
       .where(
         and(
           eq(identitySessions.id, session.sessionId),
           isNull(identitySessions.revokedAt),
-          gt(identitySessions.idleExpiresAt, now),
-          gt(identitySessions.absoluteExpiresAt, now),
+          gt(identitySessions.idleExpiresAt, databaseTime),
+          gt(identitySessions.absoluteExpiresAt, databaseTime),
         ),
       )
       .returning({ sessionId: identitySessions.id });

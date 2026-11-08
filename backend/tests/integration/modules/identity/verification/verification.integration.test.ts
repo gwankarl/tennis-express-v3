@@ -17,6 +17,28 @@ import {
   verifyTestDatabaseIdentity,
 } from '../../../../helpers/test-database.js';
 
+const { verificationAfterHashHook } = vi.hoisted(() => ({
+  verificationAfterHashHook: {
+    run: undefined as (() => Promise<void>) | undefined,
+  },
+}));
+
+vi.mock('../../../../../src/modules/identity/passwords/credentials.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('../../../../../src/modules/identity/passwords/credentials.js')
+    >();
+
+  return {
+    ...actual,
+    verifyPassword: async (password: string, storedHash: string) => {
+      const matches = await actual.verifyPassword(password, storedHash);
+      await verificationAfterHashHook.run?.();
+      return matches;
+    },
+  };
+});
+
 const runId = randomUUID();
 const fixtureEmails: string[] = [];
 const validPassword = 'a safe tennis passphrase';
@@ -230,6 +252,43 @@ describe('POST /api/v1/auth/verify-email', () => {
     );
 
     expectRequestError(await verify(token, '192.0.2.209'));
+  });
+
+  it('rejects a token that expires during password verification', async () => {
+    const email = fixtureEmail('expires-during-verification');
+    const token = await signup(email, '192.0.2.215');
+    const expiresAt = new Date(Date.now() + 2_000);
+
+    await getDatabase().pool.query(
+      'UPDATE identity_tokens SET expires_at = $2 WHERE token_digest = $1',
+      [digestIdentityToken(token), expiresAt],
+    );
+
+    verificationAfterHashHook.run = async () => {
+      const delay = Math.max(0, expiresAt.getTime() + 50 - Date.now());
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    };
+
+    try {
+      expectRequestError(await verify(token, '192.0.2.216'));
+    } finally {
+      verificationAfterHashHook.run = undefined;
+    }
+
+    const state = await getDatabase().pool.query<{
+      status: string;
+      consumed_at: Date | null;
+    }>(
+      `SELECT users.status, tokens.consumed_at
+       FROM identity_users AS users
+       JOIN identity_tokens AS tokens ON tokens.user_id = users.id
+       WHERE users.normalized_email = $1
+         AND tokens.token_digest = $2`,
+      [normalizeEmail(email), digestIdentityToken(token)],
+    );
+
+    expect(state.rows[0]?.status).toBe('pending_verification');
+    expect(state.rows[0]?.consumed_at).toBeNull();
   });
 
   it('allows only one of two concurrent submissions with the same link', async () => {
