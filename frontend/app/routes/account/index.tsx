@@ -57,6 +57,13 @@ export default function AccountPage() {
 
             <Link
               className="mt-8 inline-flex font-semibold text-forest underline"
+              to="/account/profile"
+            >
+              Edit profile
+            </Link>
+
+            <Link
+              className="mt-3 inline-flex font-semibold text-forest underline"
               to="/account/change-password"
             >
               Change password

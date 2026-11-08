@@ -144,6 +144,10 @@ describe('authentication and account UI', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your account' })).toBeInTheDocument();
     expect(screen.getByText('player@example.test')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit profile' })).toHaveAttribute(
+      'href',
+      '/account/profile',
+    );
     expect(screen.getByRole('link', { name: 'Change password' })).toHaveAttribute(
       'href',
       '/account/change-password',
@@ -157,7 +161,9 @@ describe('authentication and account UI', () => {
     expect(await screen.findByRole('heading', { name: 'Change password' })).toBeInTheDocument();
     expect(screen.getByLabelText('Current password')).toBeInTheDocument();
     expect(screen.getByLabelText('New password')).toBeInTheDocument();
-    expect(screen.getByText(/Use 15.*128 characters\. A passphrase works well\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Use 15.*128 characters\. A passphrase works well\./),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
   });
 
