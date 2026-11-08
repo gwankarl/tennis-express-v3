@@ -10,6 +10,8 @@ import { generateRequestId, setRequestIdHeader } from './http/request-context.js
 import type { DatabaseClient } from './infrastructure/database/client.js';
 import { createLoggerOptions } from './infrastructure/logging/logger.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
+import type { WorkspaceAuthorizationSources } from './http/guards/authorize-workspace.js';
+import { registerWorkspacesRoutes } from './modules/identity/accounts/workspaces.routes.js';
 import { registerVerificationRoutes } from './modules/identity/verification/verification.routes.js';
 import { registerSessionAuthRoutes } from './modules/identity/sessions/auth.routes.js';
 import { registerPasswordRecoveryRoutes } from './modules/identity/passwords/password-recovery.routes.js';
@@ -28,6 +30,7 @@ export interface AppOptions {
   database?: DatabaseClient;
   emailSender?: EmailSender;
   frontendOrigin?: string;
+  workspaceAuthorizationSources?: WorkspaceAuthorizationSources;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -92,6 +95,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerPasswordRecoveryRoutes(app);
     registerPasswordChangeRoutes(app);
     registerUserProfileRoutes(app);
+    registerWorkspacesRoutes(app, options.workspaceAuthorizationSources);
   });
 
   return app;
