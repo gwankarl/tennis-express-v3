@@ -56,7 +56,8 @@ export function loader({ request }: Route.LoaderArgs) {
   const csrfToken = issueCsrfToken(request, headers, config);
   const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'));
 
-  return data({ csrfToken, returnTo }, { headers });
+  const passwordReset = new URL(request.url).searchParams.get('passwordReset') === 'success';
+  return data({ csrfToken, returnTo, passwordReset }, { headers });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -133,7 +134,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function LoginPage() {
-  const { csrfToken, returnTo } = useLoaderData<typeof loader>();
+  const { csrfToken, returnTo, passwordReset } = useLoaderData<typeof loader>();
+
   const actionData = useActionData<typeof action>() as LoginActionData | undefined;
   const isSubmitting = useNavigation().state === 'submitting';
 
@@ -142,6 +144,15 @@ export default function LoginPage() {
       <AuthCard>
         <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Sign in</h1>
         <p className="mt-2 leading-6 text-muted">Welcome back to Tennis Xpress.</p>
+
+        {passwordReset && (
+          <p
+            className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900"
+            role="status"
+          >
+            Your password has been reset. Sign in with your new password.
+          </p>
+        )}
 
         {actionData?.status === 'invalid' && (
           <div className="mt-6">
@@ -182,6 +193,13 @@ export default function LoginPage() {
           </FormField>
 
           <PasswordField autoComplete="current-password" hint="Enter your password." />
+
+          <Link
+            className="-mt-3 inline-flex text-sm font-semibold text-forest underline"
+            to="/forgot-password"
+          >
+            Forgot password?
+          </Link>
 
           <Button disabled={isSubmitting} type="submit">
             {isSubmitting ? 'Signing in…' : 'Sign in'}
