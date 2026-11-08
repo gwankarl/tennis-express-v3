@@ -5,9 +5,12 @@ import { loadEnvFile } from 'node:process';
 export interface FrontendServerConfig {
   backendApiBaseUrl: string;
   backendApiTimeoutMs: number;
+  frontendOrigin: string;
+  csrfSecret: string;
 }
 
-export type FrontendEnvSetting = 'BACKEND_API_BASE_URL' | 'BACKEND_API_TIMEOUT_MS';
+export type FrontendEnvSetting =
+  'BACKEND_API_BASE_URL' | 'BACKEND_API_TIMEOUT_MS' | 'FRONTEND_ORIGIN' | 'CSRF_SECRET';
 
 export class FrontendEnvValidationError extends Error {
   constructor(
@@ -28,6 +31,8 @@ export function parseFrontendEnv(env: NodeJS.ProcessEnv): FrontendServerConfig {
   return {
     backendApiBaseUrl: parseBackendApiBaseUrl(env.BACKEND_API_BASE_URL),
     backendApiTimeoutMs: parseBackendApiTimeoutMs(env.BACKEND_API_TIMEOUT_MS),
+    frontendOrigin: parseFrontendOrigin(env.FRONTEND_ORIGIN),
+    csrfSecret: parseCsrfSecret(env.CSRF_SECRET),
   };
 }
 
@@ -44,6 +49,8 @@ export function loadFrontendConfig(): FrontendServerConfig {
   if (existsSync(envFilePath)) {
     const shellBaseUrl = process.env.BACKEND_API_BASE_URL;
     const shellTimeout = process.env.BACKEND_API_TIMEOUT_MS;
+    const shellFrontendOrigin = process.env.FRONTEND_ORIGIN;
+    const shellCsrfSecret = process.env.CSRF_SECRET;
 
     loadEnvFile(envFilePath);
 
@@ -53,6 +60,14 @@ export function loadFrontendConfig(): FrontendServerConfig {
 
     if (shellTimeout !== undefined) {
       process.env.BACKEND_API_TIMEOUT_MS = shellTimeout;
+    }
+
+    if (shellFrontendOrigin !== undefined) {
+      process.env.FRONTEND_ORIGIN = shellFrontendOrigin;
+    }
+
+    if (shellCsrfSecret !== undefined) {
+      process.env.CSRF_SECRET = shellCsrfSecret;
     }
   }
 
@@ -84,6 +99,46 @@ function parseBackendApiBaseUrl(value: string | undefined): string {
   }
 
   return baseUrl.replace(/\/+$/, '');
+}
+
+function parseFrontendOrigin(value: string | undefined): string {
+  if (value === undefined || value.trim().length === 0) {
+    throw new FrontendEnvValidationError('FRONTEND_ORIGIN', 'must be set to an HTTP(S) origin');
+  }
+
+  const origin = value.trim();
+
+  try {
+    const parsedUrl = new URL(origin);
+    const hasOnlyRootPath = parsedUrl.pathname === '/' || parsedUrl.pathname === '';
+
+    if (
+      !['http:', 'https:'].includes(parsedUrl.protocol) ||
+      parsedUrl.hostname.length === 0 ||
+      parsedUrl.username.length > 0 ||
+      parsedUrl.password.length > 0 ||
+      !hasOnlyRootPath ||
+      parsedUrl.search.length > 0 ||
+      parsedUrl.hash.length > 0
+    ) {
+      throw new Error();
+    }
+
+    return parsedUrl.origin;
+  } catch {
+    throw new FrontendEnvValidationError(
+      'FRONTEND_ORIGIN',
+      'must be a valid HTTP(S) origin without a path, query, or fragment',
+    );
+  }
+}
+
+function parseCsrfSecret(value: string | undefined): string {
+  if (value === undefined || new TextEncoder().encode(value.trim()).byteLength < 32) {
+    throw new FrontendEnvValidationError('CSRF_SECRET', 'must contain at least 32 bytes');
+  }
+
+  return value.trim();
 }
 
 function parseBackendApiTimeoutMs(value: string | undefined): number {

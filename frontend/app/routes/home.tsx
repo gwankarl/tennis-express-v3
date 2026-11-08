@@ -1,5 +1,6 @@
 import type { Route } from './+types/home';
 import { ApiRequestError, requestJson } from '../.server/api-client.js';
+import { Link } from 'react-router';
 
 interface HealthResponseData {
   status: 'ok';
@@ -58,6 +59,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           Tennis Xpress is getting ready to bring the tennis community together. We’re glad you’re
           here.
         </p>
+        <Link className="text-link" to="/register">
+          Create your account
+        </Link>
         <p className="backend-status" role="status">
           Backend {loaderData.backendStatus}
         </p>
