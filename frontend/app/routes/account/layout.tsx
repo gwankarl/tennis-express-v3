@@ -5,6 +5,7 @@ import {
   setWorkspacePreferenceCookie,
 } from '~/.server/auth/workspace-preference.js';
 import { WorkspaceSwitcher } from '~/features/workspaces/WorkspaceSwitcher.js';
+import { RestrictedAccountState } from '~/features/auth/AccountAccessStates.js';
 import { loadFrontendConfig } from '~/.server/env.js';
 import {
   fetchWorkspaceAvailability,
@@ -84,6 +85,15 @@ export async function action({ request }: Route.ActionArgs) {
   } catch (error) {
     if (isCancelledWorkspaceRequest(request, error)) throw error;
 
+    if (
+      error instanceof ApiRequestError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      error.errorCode === 'ACCOUNT_RESTRICTED'
+    ) {
+      return redirect('/account');
+    }
+
     if (error instanceof RequestProtectionError) {
       return data<SwitchActionData>({ status: 'blocked' }, { status: error.status });
     }
@@ -106,6 +116,10 @@ export default function AccountLayout() {
   const page = useLoaderData<typeof loader>();
   const actionResult = useActionData<typeof action>();
   const isSubmitting = useNavigation().state === 'submitting';
+
+  if (page.status === 'restricted') {
+    return <RestrictedAccountState csrfToken={page.csrfToken} />;
+  }
 
   return (
     <>

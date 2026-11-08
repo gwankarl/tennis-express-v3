@@ -383,6 +383,45 @@ describe('Fastify authentication guard', () => {
     expect(response.body).not.toContain(created.rawToken);
     expect(response.body).not.toContain('tokenDigest');
   });
+
+  it('reports a restricted account without exposing the reason and still permits logout', async () => {
+    const userId = await createUser();
+    const created = await createSession(getDatabase().db, userId);
+
+    if (!created) throw new Error('Expected session creation to succeed.');
+
+    await getDatabase()
+      .db.update(identityUsers)
+      .set({ status: 'suspended' })
+      .where(eq(identityUsers.id, userId));
+
+    const headers = { authorization: `Bearer ${created.rawToken}` };
+    const restrictedResponses = await Promise.all([
+      getApp().inject({ method: 'GET', url: '/test-auth', headers }),
+      getApp().inject({ method: 'GET', url: '/api/v1/auth/me', headers }),
+      getApp().inject({ method: 'GET', url: '/api/v1/me/profile', headers }),
+      getApp().inject({ method: 'GET', url: '/api/v1/me/workspaces', headers }),
+    ]);
+
+    for (const response of restrictedResponses) {
+      expect(response.statusCode).toBe(403);
+      const body = response.json<ApiErrorResponse>();
+      expect(body.error.code).toBe('ACCOUNT_RESTRICTED');
+      expect(body.error.message).toBe('Account access is restricted');
+      expect(body.requestId).toBe(response.headers['x-request-id']);
+      expect(response.body).not.toContain('suspended');
+    }
+
+    const logout = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/logout',
+      headers,
+    });
+
+    expect(logout.statusCode).toBe(200);
+    expect(logout.json()).toEqual({ data: { status: 'logged_out' } });
+    expect(await validateSession(getDatabase().db, created.rawToken)).toBeUndefined();
+  });
 });
 
 describe('identity login and session routes', () => {

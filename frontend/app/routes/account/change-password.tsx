@@ -1,6 +1,10 @@
 import type { Route } from './+types/change-password';
 import { Alert } from '~/components/Alert.js';
 import { AuthCard, AuthPageShell } from '~/features/auth/AuthLayout.js';
+import {
+  RestrictedAccountState,
+  TemporaryAccessState,
+} from '~/features/auth/AccountAccessStates.js';
 import { Button } from '~/components/Button.js';
 import { PasswordField } from '~/components/PasswordField.js';
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
@@ -9,11 +13,7 @@ import {
   RequestProtectionError,
   withProtectedSessionFormRequest,
 } from '~/.server/auth/request-protection.js';
-import {
-  clearSessionCookie,
-  loadProtectedUser,
-  readSessionToken,
-} from '~/.server/auth/session.js';
+import { clearSessionCookie, loadProtectedUser, readSessionToken } from '~/.server/auth/session.js';
 import {
   data,
   Form,
@@ -35,10 +35,7 @@ interface ChangePasswordActionData {
 
 function isChangePasswordResponse(value: unknown): value is ChangePasswordResponseData {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    'status' in value &&
-    value.status === 'changed'
+    typeof value === 'object' && value !== null && 'status' in value && value.status === 'changed'
   );
 }
 
@@ -55,6 +52,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (result.status === 'unavailable') {
     return { status: 'unavailable' as const };
+  }
+
+  if (result.status === 'restricted') {
+    return { status: 'restricted' as const, csrfToken: result.csrfToken };
   }
 
   return {
@@ -74,44 +75,38 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const result = await withProtectedSessionFormRequest(
-      request,
-      token,
-      config,
-      async (form) => {
-        const currentPasswordValue = form.get('currentPassword');
-        const newPasswordValue = form.get('newPassword');
-        const currentPassword =
-          typeof currentPasswordValue === 'string' ? currentPasswordValue : '';
-        const newPassword = typeof newPasswordValue === 'string' ? newPasswordValue : '';
-        const fieldErrors: NonNullable<ChangePasswordActionData['fieldErrors']> = {};
+    const result = await withProtectedSessionFormRequest(request, token, config, async (form) => {
+      const currentPasswordValue = form.get('currentPassword');
+      const newPasswordValue = form.get('newPassword');
+      const currentPassword = typeof currentPasswordValue === 'string' ? currentPasswordValue : '';
+      const newPassword = typeof newPasswordValue === 'string' ? newPasswordValue : '';
+      const fieldErrors: NonNullable<ChangePasswordActionData['fieldErrors']> = {};
 
-        if (currentPassword.length === 0 || currentPassword.length > 1024) {
-          fieldErrors.currentPassword = 'Enter your current password.';
-        }
+      if (currentPassword.length === 0 || currentPassword.length > 1024) {
+        fieldErrors.currentPassword = 'Enter your current password.';
+      }
 
-        const codePointCount = [...newPassword.normalize('NFC')].length;
-        if (codePointCount < 15) {
-          fieldErrors.newPassword = 'Use at least 15 characters.';
-        } else if (codePointCount > 128) {
-          fieldErrors.newPassword = 'Use no more than 128 characters.';
-        }
+      const codePointCount = [...newPassword.normalize('NFC')].length;
+      if (codePointCount < 15) {
+        fieldErrors.newPassword = 'Use at least 15 characters.';
+      } else if (codePointCount > 128) {
+        fieldErrors.newPassword = 'Use no more than 128 characters.';
+      }
 
-        if (fieldErrors.currentPassword || fieldErrors.newPassword) {
-          return { kind: 'invalid' as const, fieldErrors };
-        }
+      if (fieldErrors.currentPassword || fieldErrors.newPassword) {
+        return { kind: 'invalid' as const, fieldErrors };
+      }
 
-        await requestJson<ChangePasswordResponseData>('/auth/change-password', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}` },
-          body: { currentPassword, newPassword },
-          signal: request.signal,
-          validateData: isChangePasswordResponse,
-        });
+      await requestJson<ChangePasswordResponseData>('/auth/change-password', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: { currentPassword, newPassword },
+        signal: request.signal,
+        validateData: isChangePasswordResponse,
+      });
 
-        return { kind: 'changed' as const };
-      },
-    );
+      return { kind: 'changed' as const };
+    });
 
     if (result.kind === 'invalid') {
       return data<ChangePasswordActionData>(
@@ -129,6 +124,15 @@ export async function action({ request }: Route.ActionArgs) {
       (error instanceof ApiRequestError && error.kind === 'cancelled')
     ) {
       throw error;
+    }
+
+    if (
+      error instanceof ApiRequestError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      error.errorCode === 'ACCOUNT_RESTRICTED'
+    ) {
+      return redirect('/account/change-password');
     }
 
     if (error instanceof RequestProtectionError) {
@@ -159,10 +163,7 @@ export async function action({ request }: Route.ActionArgs) {
         }
       }
 
-      return data<ChangePasswordActionData>(
-        { status: 'invalid', fieldErrors },
-        { status: 400 },
-      );
+      return data<ChangePasswordActionData>({ status: 'invalid', fieldErrors }, { status: 400 });
     }
 
     return data<ChangePasswordActionData>({ status: 'unavailable' }, { status: 503 });
@@ -174,16 +175,23 @@ export default function ChangePasswordPage() {
   const actionData = useActionData<typeof action>() as ChangePasswordActionData | undefined;
   const isSubmitting = useNavigation().state === 'submitting';
 
+  if (page.status === 'restricted') {
+    return <RestrictedAccountState csrfToken={page.csrfToken} />;
+  }
+
+  if (page.status === 'unavailable') {
+    return (
+      <TemporaryAccessState
+        title="Password settings temporarily unavailable"
+        message="We couldn’t check your account. Your session is still in place; try again."
+      />
+    );
+  }
+
   return (
     <AuthPageShell>
       <AuthCard>
         <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Change password</h1>
-
-        {page.status === 'unavailable' && (
-          <div className="mt-6">
-            <Alert>We couldn’t check your session. Refresh the page to try again.</Alert>
-          </div>
-        )}
 
         {actionData?.status === 'blocked' && (
           <div className="mt-6">

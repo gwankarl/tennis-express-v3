@@ -4,6 +4,7 @@ export const API_ERROR_CODES = [
   'REQUEST_ERROR',
   'INTERNAL_ERROR',
   'SERVICE_UNAVAILABLE',
+  'ACCOUNT_RESTRICTED',
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

@@ -4,6 +4,10 @@ import { Alert } from '~/components/Alert.js';
 import { Button } from '~/components/Button.js';
 import { FormField } from '~/components/FormField.js';
 import { AuthCard, AuthPageShell } from '~/features/auth/AuthLayout.js';
+import {
+  RestrictedAccountState,
+  TemporaryAccessState,
+} from '~/features/auth/AccountAccessStates.js';
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
 import { loadFrontendConfig } from '~/.server/env.js';
 import {
@@ -90,6 +94,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { status: 'unavailable' as const };
   }
 
+  if (protectedUser.status === 'restricted') {
+    return { status: 'restricted' as const, csrfToken: protectedUser.csrfToken };
+  }
+
   try {
     const profile = await requestJson<UserProfile>('/me/profile', {
       headers: { authorization: `Bearer ${protectedUser.sessionToken}` },
@@ -105,6 +113,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   } catch (error) {
     if (isCancelled(request, error)) {
       throw error;
+    }
+
+    if (
+      error instanceof ApiRequestError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      error.errorCode === 'ACCOUNT_RESTRICTED'
+    ) {
+      return { status: 'restricted' as const, csrfToken: protectedUser.csrfToken };
     }
 
     if (isExpiredSession(error)) {
@@ -185,6 +202,15 @@ export async function action({ request }: Route.ActionArgs) {
       throw error;
     }
 
+    if (
+      error instanceof ApiRequestError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      error.errorCode === 'ACCOUNT_RESTRICTED'
+    ) {
+      return redirect('/account/profile');
+    }
+
     if (error instanceof RequestProtectionError) {
       return data<ProfileActionData>(
         { status: 'blocked', displayName: submittedName },
@@ -250,112 +276,110 @@ export default function ProfilePage() {
     }
   }, [actionDisplayName]);
 
+  if (page.status === 'restricted') {
+    return <RestrictedAccountState csrfToken={page.csrfToken} />;
+  }
+
+  if (page.status === 'unavailable') {
+    return (
+      <TemporaryAccessState
+        title="Profile temporarily unavailable"
+        message="We couldn’t load your profile. Your session is still in place; try again."
+      />
+    );
+  }
+
   return (
     <AuthPageShell>
       <AuthCard>
         <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Edit profile</h1>
 
-        {page.status === 'unavailable' ? (
-          <>
-            <div className="mt-6">
-              <Alert>Profile is temporarily unavailable. Please refresh and try again.</Alert>
+        <>
+          <dl className="mt-6 space-y-4 text-sm">
+            <div>
+              <dt className="font-semibold text-ink">Email</dt>
+              <dd className="mt-1 break-all text-muted">{page.profile.email}</dd>
             </div>
-            <Link className="mt-6 inline-flex font-semibold text-forest underline" to="/account">
-              Return to account
-            </Link>
-          </>
-        ) : (
-          <>
-            <dl className="mt-6 space-y-4 text-sm">
-              <div>
-                <dt className="font-semibold text-ink">Email</dt>
-                <dd className="mt-1 break-all text-muted">{page.profile.email}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-ink">Email status</dt>
-                <dd className="mt-1 text-muted">Verified</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-ink">Verified on</dt>
-                <dd className="mt-1 text-muted">
-                  <time dateTime={page.profile.emailVerifiedAt}>
-                    {page.profile.emailVerifiedAt.slice(0, 10)}
-                  </time>
-                </dd>
-              </div>
-            </dl>
+            <div>
+              <dt className="font-semibold text-ink">Email status</dt>
+              <dd className="mt-1 text-muted">Verified</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-ink">Verified on</dt>
+              <dd className="mt-1 text-muted">
+                <time dateTime={page.profile.emailVerifiedAt}>
+                  {page.profile.emailVerifiedAt.slice(0, 10)}
+                </time>
+              </dd>
+            </div>
+          </dl>
 
-            {actionData?.status === 'saved' && (
-              <p
-                className="mt-6 text-sm font-semibold text-forest"
-                role="status"
-                aria-live="polite"
-              >
-                Profile saved.
-              </p>
-            )}
+          {actionData?.status === 'saved' && (
+            <p className="mt-6 text-sm font-semibold text-forest" role="status" aria-live="polite">
+              Profile saved.
+            </p>
+          )}
 
-            {actionData?.status === 'blocked' && (
-              <div className="mt-6">
-                <Alert>We couldn’t verify this request. Refresh the page and try again.</Alert>
-              </div>
-            )}
+          {actionData?.status === 'blocked' && (
+            <div className="mt-6">
+              <Alert>We couldn’t verify this request. Refresh the page and try again.</Alert>
+            </div>
+          )}
 
-            {actionData?.status === 'limited' && (
-              <div className="mt-6">
-                <Alert>Too many attempts. Wait a little while and try again.</Alert>
-              </div>
-            )}
+          {actionData?.status === 'limited' && (
+            <div className="mt-6">
+              <Alert>Too many attempts. Wait a little while and try again.</Alert>
+            </div>
+          )}
 
-            {actionData?.status === 'unavailable' && (
-              <div className="mt-6">
-                <Alert>Profile could not be saved. Please try again.</Alert>
-              </div>
-            )}
+          {actionData?.status === 'unavailable' && (
+            <div className="mt-6">
+              <Alert>Profile could not be saved. Please try again.</Alert>
+            </div>
+          )}
 
-            <Form className="mt-8 space-y-5" method="post" noValidate aria-busy={isSubmitting}>
-              <input name="csrfToken" type="hidden" value={page.csrfToken} />
+          <Form className="mt-8 space-y-5" method="post" noValidate aria-busy={isSubmitting}>
+            <input name="csrfToken" type="hidden" value={page.csrfToken} />
 
-              <FormField
+            <FormField
+              id="displayName"
+              label="Display name"
+              hint="Choose the name shown on your profile."
+              error={actionData?.status === 'invalid' ? actionData.fieldError : undefined}
+            >
+              <input
                 id="displayName"
-                label="Display name"
-                hint="Choose the name shown on your profile."
-                error={actionData?.status === 'invalid' ? actionData.fieldError : undefined}
-              >
-                <input
-                  id="displayName"
-                  name="displayName"
-                  type="text"
-                  autoComplete="name"
-                  required
-                  maxLength={100}
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.currentTarget.value)}
-                  aria-invalid={actionData?.status === 'invalid'}
-                  aria-describedby={[
-                    'displayName-hint',
-                    actionData?.status === 'invalid' ? 'displayName-error' : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-ink outline-none transition placeholder:text-stone-400 focus:border-forest focus:ring-2 focus:ring-forest/15"
-                />
-              </FormField>
+                name="displayName"
+                type="text"
+                autoComplete="name"
+                required
+                maxLength={100}
+                value={displayName}
+                onChange={(event) => setDisplayName(event.currentTarget.value)}
+                aria-invalid={actionData?.status === 'invalid'}
+                aria-describedby={[
+                  'displayName-hint',
+                  actionData?.status === 'invalid' ? 'displayName-error' : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-ink outline-none transition placeholder:text-stone-400 focus:border-forest focus:ring-2 focus:ring-forest/15"
+              />
+            </FormField>
 
-              <Button disabled={isSubmitting} type="submit">
-                {isSubmitting ? 'Saving profile…' : 'Save profile'}
-              </Button>
+            <Button disabled={isSubmitting} type="submit">
+              {isSubmitting ? 'Saving profile…' : 'Save profile'}
+            </Button>
 
-              <p className="sr-only" role="status" aria-live="polite">
-                {isSubmitting ? 'Saving profile…' : ''}
-              </p>
-            </Form>
+            <p className="sr-only" role="status" aria-live="polite">
+              {isSubmitting ? 'Saving profile…' : ''}
+            </p>
+          </Form>
 
-            <Link className="mt-6 inline-flex font-semibold text-forest underline" to="/account">
-              Return to account
-            </Link>
-          </>
-        )}
+          <Link className="mt-6 inline-flex font-semibold text-forest underline" to="/account">
+            Return to account
+          </Link>
+        </>
       </AuthCard>
     </AuthPageShell>
   );

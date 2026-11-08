@@ -348,6 +348,14 @@ describe('GET /api/v1/me/workspaces', () => {
       .set({ status: 'suspended' })
       .where(eq(identityUsers.id, fixture.userId));
 
-    expectError(await requestWorkspaces(fixture.token), 401);
+    const restricted = await requestWorkspaces(fixture.token);
+    expect(restricted.statusCode).toBe(403);
+    expect(restricted.json<ApiErrorResponse>()).toMatchObject({
+      error: {
+        code: 'ACCOUNT_RESTRICTED',
+        message: 'Account access is restricted',
+      },
+      requestId: restricted.headers['x-request-id'],
+    });
   });
 });

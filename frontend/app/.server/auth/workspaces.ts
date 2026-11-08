@@ -20,6 +20,7 @@ export type WorkspacePageData =
       csrfToken: string;
       availability: WorkspaceAvailability;
     }
+  | { status: 'restricted'; csrfToken: string }
   | { status: 'unavailable' };
 
 /** Validates the unwrapped response data from GET /api/v1/me/workspaces. */
@@ -65,6 +66,10 @@ export async function loadWorkspacePage(
 
   if (protectedUser.status === 'unavailable') {
     return { status: 'unavailable' };
+  }
+
+  if (protectedUser.status === 'restricted') {
+    return { status: 'restricted', csrfToken: protectedUser.csrfToken };
   }
 
   try {

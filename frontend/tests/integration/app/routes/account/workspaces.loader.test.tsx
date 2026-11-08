@@ -6,8 +6,8 @@ const { configMock, requestJsonMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('~/.server/env.js', () => ({ loadFrontendConfig: configMock }));
-vi.mock('~/.server/api-client.js', () => ({
-  ApiRequestError: class ApiRequestError extends Error {
+vi.mock('~/.server/api-client.js', () => {
+  class MockApiRequestError extends Error {
     constructor(
       readonly kind: string,
       message: string,
@@ -21,10 +21,12 @@ vi.mock('~/.server/api-client.js', () => ({
     get errorCode() {
       return this.options.errorCode;
     }
-  },
-  requestJson: requestJsonMock,
-}));
+  }
 
+  return { ApiRequestError: MockApiRequestError, requestJson: requestJsonMock };
+});
+
+import { ApiRequestError } from '~/.server/api-client.js';
 import { issueSessionCsrfToken } from '~/.server/auth/request-protection.js';
 import { setWorkspacePreferenceCookie } from '~/.server/auth/workspace-preference.js';
 import { action as accountAction, loader as accountLoader } from '~/routes/account/layout.js';
@@ -166,14 +168,56 @@ describe('workspace routes', () => {
     );
   });
 
-  it('redirects direct Seller access to Buyer after Seller eligibility is lost', async () => {
+  it('shows the Seller-unavailable state and confirms Buyer eligibility after Seller access is lost', async () => {
     mockAuthenticated(false);
+
+    const result = await sellerLoader({
+      request: requestWithSession('/seller'),
+    } as Parameters<typeof sellerLoader>[0]);
+
+    expect(result).toEqual({ status: 'seller-unavailable', buyerAvailable: true });
+  });
+
+  it('redirects an expired deep link to sign-in and preserves its safe destination', async () => {
+    requestJsonMock.mockRejectedValueOnce(
+      new ApiRequestError('http', 'Request failed', {
+        status: 401,
+        errorCode: 'REQUEST_ERROR',
+      }),
+    );
 
     await expectThrownRedirect(
       sellerLoader({
-        request: requestWithSession('/seller'),
+        request: requestWithSession('/seller?tab=listings'),
       } as Parameters<typeof sellerLoader>[0]),
-      '/account',
+      '/login?returnTo=%2Fseller%3Ftab%3Dlistings',
     );
+  });
+
+  it('keeps the requested Seller route on temporary API failure', async () => {
+    requestJsonMock.mockRejectedValueOnce(new Error('simulated network failure'));
+
+    const result = await sellerLoader({
+      request: requestWithSession('/seller'),
+    } as Parameters<typeof sellerLoader>[0]);
+
+    expect(result).toEqual({ status: 'unavailable' });
+  });
+
+  it('returns the restricted state without exposing the session token', async () => {
+    requestJsonMock.mockRejectedValueOnce(
+      new ApiRequestError('http', 'Account access is restricted', {
+        status: 403,
+        errorCode: 'ACCOUNT_RESTRICTED',
+      }),
+    );
+
+    const result = await accountLoader({
+      request: requestWithSession('/account'),
+    } as Parameters<typeof accountLoader>[0]);
+
+    expect(result).toMatchObject({ status: 'restricted', csrfToken: expect.any(String) });
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(requestJsonMock).toHaveBeenCalledTimes(1);
   });
 });

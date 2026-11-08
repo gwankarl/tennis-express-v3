@@ -2,7 +2,10 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { ApiErrorResponse, ApiSuccess } from '../../../http/contract.js';
 import { apiErrorResponseSchema } from '../../../http/contract.js';
-import { requireAuthentication } from '../../../http/guards/authenticate.js';
+import {
+  requireAuthentication,
+  requireSessionForLogout,
+} from '../../../http/guards/authenticate.js';
 import { identityUsers } from '../accounts/user.table.js';
 import { login } from './auth.service.js';
 import {
@@ -81,7 +84,7 @@ export function registerSessionAuthRoutes(app: FastifyInstance): void {
   app.post(
     '/api/v1/auth/logout',
     {
-      preHandler: requireAuthentication,
+      preHandler: requireSessionForLogout,
       schema: {
         tags: ['Identity'],
         summary: 'Sign out the current session',
@@ -123,6 +126,7 @@ export function registerSessionAuthRoutes(app: FastifyInstance): void {
         response: {
           200: currentUserResponseSchema,
           401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
           500: apiErrorResponseSchema,
         },
       },

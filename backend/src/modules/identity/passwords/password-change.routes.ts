@@ -34,6 +34,7 @@ export function registerPasswordChangeRoutes(app: FastifyInstance): void {
           200: changePasswordResponseSchema,
           400: apiErrorResponseSchema,
           401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
           429: apiErrorResponseSchema,
           500: apiErrorResponseSchema,
         },

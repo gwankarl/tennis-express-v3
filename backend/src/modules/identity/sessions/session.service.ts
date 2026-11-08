@@ -13,6 +13,10 @@ export interface AuthenticatedSession {
   userId: string;
 }
 
+export type SessionValidation =
+  | { kind: 'authenticated'; session: AuthenticatedSession }
+  | { kind: 'account_restricted'; session: AuthenticatedSession };
+
 export interface CreatedSession extends AuthenticatedSession {
   /** Return this to the caller that needs to issue the credential. Never persist or log it. */
   rawToken: string;
@@ -112,11 +116,11 @@ export async function createSession(
  * deadlines. Locks the user and session before renewing idle expiry so a
  * concurrent revocation or expiry cannot be undone.
  */
-export async function validateSession(
+export async function validateSessionState(
   db: DatabaseClient['db'],
   rawToken: string,
   now?: Date,
-): Promise<AuthenticatedSession | undefined> {
+): Promise<SessionValidation | undefined> {
   if (now) assertValidDate(now);
 
   if (rawToken.length === 0) {
@@ -155,7 +159,13 @@ export async function validateSession(
 
     const user = users[0];
 
-    if (!user || !isAccountEligible(user.status, user.emailVerifiedAt)) {
+    if (!user) {
+      return undefined;
+    }
+
+    const accountRestricted = user.status === 'suspended';
+
+    if (!accountRestricted && !isAccountEligible(user.status, user.emailVerifiedAt)) {
       return undefined;
     }
 
@@ -194,6 +204,16 @@ export async function validateSession(
       return undefined;
     }
 
+    if (accountRestricted) {
+      return {
+        kind: 'account_restricted',
+        session: {
+          sessionId: session.sessionId,
+          userId: session.userId,
+        },
+      };
+    }
+
     const renewedIdleExpiry = new Date(
       Math.min(checkedAt.getTime() + IDLE_TIMEOUT_MS, session.absoluteExpiresAt.getTime()),
     );
@@ -219,10 +239,23 @@ export async function validateSession(
     }
 
     return {
-      sessionId: session.sessionId,
-      userId: session.userId,
+      kind: 'authenticated',
+      session: {
+        sessionId: session.sessionId,
+        userId: session.userId,
+      },
     };
   });
+}
+
+/** Returns only sessions belonging to active, verified accounts. */
+export async function validateSession(
+  db: DatabaseClient['db'],
+  rawToken: string,
+  now?: Date,
+): Promise<AuthenticatedSession | undefined> {
+  const result = await validateSessionState(db, rawToken, now);
+  return result?.kind === 'authenticated' ? result.session : undefined;
 }
 
 /** Revokes one session owned by the supplied user. Repeated calls are harmless. */

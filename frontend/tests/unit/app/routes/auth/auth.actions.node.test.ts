@@ -151,6 +151,24 @@ describe('login and logout actions', () => {
     );
   });
 
+  it('returns a restricted loader state without clearing or exposing the session token', async () => {
+    requestJsonMocked.mockRejectedValueOnce(
+      new ApiRequestError('http', 'Account access is restricted', {
+        status: 403,
+        errorCode: 'ACCOUNT_RESTRICTED',
+      }),
+    );
+
+    const request = new Request(`${origin}/account`, {
+      headers: { cookie: `tx_session=${sessionToken}` },
+    });
+    const result = await accountLoader({ request } as Parameters<typeof accountLoader>[0]);
+
+    expect(result).toMatchObject({ status: 'restricted', csrfToken: expect.any(String) });
+    expect(JSON.stringify(result)).not.toContain(sessionToken);
+    expect(requestJsonMocked).toHaveBeenCalledTimes(1);
+  });
+
   it('stores the login token only in the HttpOnly cookie and clears anonymous context', async () => {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     requestJsonMocked.mockResolvedValue({

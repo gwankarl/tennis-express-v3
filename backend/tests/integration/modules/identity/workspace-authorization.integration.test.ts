@@ -231,7 +231,13 @@ describe('workspace authorization guard', () => {
       .set({ status: 'suspended' })
       .where(eq(identityUsers.id, fixture.userId));
 
-    expectError(await getWorkspace('/__test/api/v1/workspaces/buyer', fixture.token), 401);
+    const restricted = await getWorkspace('/__test/api/v1/workspaces/buyer', fixture.token);
+    expect(restricted.statusCode).toBe(403);
+
+    const body = restricted.json<ApiErrorResponse>();
+    expect(body.error.code).toBe('ACCOUNT_RESTRICTED');
+    expect(body.error.message).toBe('Account access is restricted');
+    expect(body.requestId).toBe(restricted.headers['x-request-id']);
   });
 
   it('requires approved application state and active Seller operating access', async () => {

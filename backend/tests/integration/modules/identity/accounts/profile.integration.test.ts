@@ -210,7 +210,7 @@ describe('GET and PATCH /api/v1/me/profile', () => {
     expectUnauthorized(invalidSession);
   });
 
-  it('rejects a session after its account becomes ineligible', async () => {
+  it('returns the account restriction outcome after a session owner is suspended', async () => {
     const user = await createAuthenticatedUser();
 
     await getDatabase()
@@ -218,6 +218,16 @@ describe('GET and PATCH /api/v1/me/profile', () => {
       .set({ status: 'suspended' })
       .where(eq(identityUsers.id, user.id));
 
-    expectUnauthorized(await getProfile(user.token));
+    for (const response of [
+      await getProfile(user.token),
+      await patchProfile(user.token, { displayName: 'Should not save' }),
+    ]) {
+      expect(response.statusCode).toBe(403);
+      const body = response.json<ApiErrorResponse>();
+      expect(body.error.code).toBe('ACCOUNT_RESTRICTED');
+      expect(body.error.message).toBe('Account access is restricted');
+      expect(body.requestId).toBe(response.headers['x-request-id']);
+      expect(response.body).not.toContain('suspended');
+    }
   });
 });

@@ -3,7 +3,7 @@ import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import type { ApiErrorResponse } from '../contract.js';
 import {
   type AuthenticatedSession,
-  validateSession,
+  validateSessionState,
 } from '../../modules/identity/sessions/session.service.js';
 
 declare module 'fastify' {
@@ -21,14 +21,26 @@ export function registerAuthenticationContext(app: FastifyInstance): void {
   app.decorateRequest('identitySession', null);
 }
 
-/**
- * Fastify pre-handler for routes that require a valid active-account session.
- * Expected credential failures share one response; database failures propagate
- * to the existing generic 500 handler.
- */
+/** Requires a valid session for an active, verified, unrestricted account. */
 export async function requireAuthentication(
   request: FastifyRequest,
   reply: FastifyReply,
+): Promise<void> {
+  await authenticateSession(request, reply, false);
+}
+
+/** Allows a restricted account to validate and revoke its current session. */
+export async function requireSessionForLogout(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  await authenticateSession(request, reply, true);
+}
+
+async function authenticateSession(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  allowRestrictedAccount: boolean,
 ): Promise<void> {
   const match = /^Bearer\s+([A-Za-z0-9_-]{43})$/iu.exec(request.headers.authorization ?? '');
   const rawToken = match?.[1];
@@ -44,14 +56,18 @@ export async function requireAuthentication(
     throw new Error('Session authentication database is unavailable.');
   }
 
-  const session = await validateSession(db, rawToken);
+  const result = await validateSessionState(db, rawToken);
 
-  if (!session) {
+  if (!result) {
     sendUnauthorized(request, reply);
     return;
   }
 
-  request.identitySession = session;
+  request.identitySession = result.session;
+
+  if (result.kind === 'account_restricted' && !allowRestrictedAccount) {
+    sendAccountRestricted(request, reply);
+  }
 }
 
 function sendUnauthorized(request: FastifyRequest, reply: FastifyReply): void {
@@ -64,4 +80,16 @@ function sendUnauthorized(request: FastifyRequest, reply: FastifyReply): void {
   };
 
   reply.code(401).send(body);
+}
+
+function sendAccountRestricted(request: FastifyRequest, reply: FastifyReply): void {
+  const body: ApiErrorResponse = {
+    error: {
+      code: 'ACCOUNT_RESTRICTED',
+      message: 'Account access is restricted',
+    },
+    requestId: request.id,
+  };
+
+  reply.code(403).send(body);
 }

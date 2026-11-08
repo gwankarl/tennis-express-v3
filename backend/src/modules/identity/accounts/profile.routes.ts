@@ -42,6 +42,7 @@ export function registerUserProfileRoutes(app: FastifyInstance): void {
         response: {
           200: userProfileResponseSchema,
           401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
           500: apiErrorResponseSchema,
         },
       },
@@ -100,6 +101,7 @@ export function registerUserProfileRoutes(app: FastifyInstance): void {
           200: userProfileResponseSchema,
           400: apiErrorResponseSchema,
           401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
           500: apiErrorResponseSchema,
         },
       },

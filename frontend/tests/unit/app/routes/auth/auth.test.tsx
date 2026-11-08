@@ -172,6 +172,7 @@ describe('authentication and account UI', () => {
     expect(
       await screen.findByRole('heading', { name: 'Account temporarily unavailable' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/refresh this page to try again/i)).toBeInTheDocument();
+    expect(screen.getByText(/your session is still in place/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/account');
   });
 });

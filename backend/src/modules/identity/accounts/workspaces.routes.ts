@@ -32,6 +32,7 @@ export function registerWorkspacesRoutes(
         response: {
           200: workspacesResponseSchema,
           401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
           500: apiErrorResponseSchema,
         },
       },

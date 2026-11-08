@@ -20,6 +20,7 @@ export type ProtectedUserResult =
       /** Server-only: callers must never include this in loader or action data. */
       sessionToken: string;
     }
+  | { status: 'restricted'; csrfToken: string }
   | { status: 'unavailable' };
 
 /** Validates the `/auth/me` response before the account page uses it. */
@@ -148,6 +149,18 @@ export async function loadProtectedUser(
       (error instanceof ApiRequestError && error.kind === 'cancelled')
     ) {
       throw error;
+    }
+
+    if (
+      error instanceof ApiRequestError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      error.errorCode === 'ACCOUNT_RESTRICTED'
+    ) {
+      return {
+        status: 'restricted',
+        csrfToken: issueSessionCsrfToken(request, token, config),
+      };
     }
 
     if (
