@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../app/.server/api-client.js', () => ({
@@ -22,7 +23,11 @@ describe('home backend status', () => {
     ['available', 'Backend available'],
     ['unavailable', 'Backend unavailable'],
   ] as const)('renders %s status accessibly', (backendStatus, message) => {
-    render(<HomeForTest loaderData={{ backendStatus }} />);
+    render(
+      <MemoryRouter>
+        <HomeForTest loaderData={{ backendStatus }} />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByRole('status')).toHaveTextContent(message);
   });

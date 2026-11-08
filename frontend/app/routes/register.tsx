@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
 import type { Route } from './+types/register';
 import { Alert } from '~/components/Alert.js';
+import { AuthCard, AuthPageShell } from '~/components/AuthPageShell.js';
 import { Button } from '~/components/Button.js';
 import { FormField } from '~/components/FormField.js';
 import { PasswordField } from '~/components/PasswordField.js';
@@ -11,7 +11,7 @@ import {
   RequestProtectionError,
   withProtectedFormRequest,
 } from '~/.server/request-protection.js';
-import { data, Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
+import { data, Form, useActionData, useLoaderData, useNavigation } from 'react-router';
 
 interface RegistrationResponseData {
   status: 'accepted';
@@ -145,22 +145,20 @@ export default function RegisterPage() {
 
   if (actionData?.status === 'accepted') {
     return (
-      <PageShell>
-        <section className="w-full max-w-110 rounded-3xl bg-card p-7 shadow-xl shadow-forest/5 sm:p-10">
-          <Accent />
+      <AuthPageShell>
+        <AuthCard>
           <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Check your inbox</h1>
           <p className="mt-3 leading-7 text-muted">
             If your signup can continue, we’ll send a verification link.
           </p>
-        </section>
-      </PageShell>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
   return (
-    <PageShell>
-      <section className="w-full max-w-110 rounded-3xl bg-card p-7 shadow-xl shadow-forest/5 sm:p-10">
-        <Accent />
+    <AuthPageShell>
+      <AuthCard>
         <h1 className="mt-6 text-3xl font-semibold tracking-tight text-ink">Create your account</h1>
         <p className="mt-2 leading-6 text-muted">
           Join the Tennis Xpress community and get ready to play.
@@ -207,33 +205,7 @@ export default function RegisterPage() {
             {isSubmitting ? 'Creating account…' : 'Create account'}
           </Button>
         </Form>
-      </section>
-    </PageShell>
+      </AuthCard>
+    </AuthPageShell>
   );
-}
-
-function PageShell({ children }: { children: ReactNode }) {
-  return (
-    <main className="min-h-screen bg-page px-4 py-6 font-sans text-ink sm:px-6 sm:py-10">
-      <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
-        <Link className="inline-flex items-center gap-3 font-semibold text-forest" to="/">
-          <span
-            aria-hidden="true"
-            className="grid size-10 place-items-center rounded-full bg-forest text-sm font-bold text-white"
-          >
-            TX
-          </span>
-          <span>Tennis Xpress</span>
-        </Link>
-        <span className="hidden text-sm text-muted sm:block">Made for the love of tennis</span>
-      </div>
-      <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-5xl items-center justify-center py-10">
-        {children}
-      </div>
-    </main>
-  );
-}
-
-function Accent() {
-  return <span aria-hidden="true" className="block h-1.5 w-12 rounded-full bg-lime" />;
 }

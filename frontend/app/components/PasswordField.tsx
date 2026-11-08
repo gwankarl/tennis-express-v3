@@ -3,21 +3,22 @@ import { FormField } from '~/components/FormField.js';
 
 interface PasswordFieldProps {
   error?: string;
+  autoComplete?: 'new-password' | 'current-password';
+  hint?: string;
 }
 
-export function PasswordField({ error }: PasswordFieldProps) {
+export function PasswordField({
+  error,
+  autoComplete = 'new-password',
+  hint = 'Use 15–128 characters. A passphrase works well.',
+}: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
-    <FormField
-      id="password"
-      label="Password"
-      hint="Use 15–128 characters. A passphrase works well."
-      error={error}
-    >
+    <FormField id="password" label="Password" hint={hint} error={error}>
       <div className="relative">
         <input
-          autoComplete="new-password"
+          autoComplete={autoComplete}
           className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 pr-20 text-ink outline-none transition placeholder:text-stone-400 focus:border-forest focus:ring-2 focus:ring-forest/15"
           id="password"
           name="password"
