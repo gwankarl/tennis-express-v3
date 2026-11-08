@@ -29,9 +29,9 @@ vi.mock('~/.server/api-client.js', () => {
 });
 
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
-import { issueCsrfToken } from '~/.server/request-protection.js';
-import { action as verifyAction, loader as verifyLoader } from '~/routes/verify-email.js';
-import { action as resendAction } from '~/routes/resend-verification.js';
+import { issueCsrfToken } from '~/.server/auth/request-protection.js';
+import { action as verifyAction, loader as verifyLoader } from '~/routes/auth/verify-email.js';
+import { action as resendAction } from '~/routes/auth/resend-verification.js';
 
 const requestJsonMock = vi.mocked(requestJson);
 const origin = 'http://localhost:5173';

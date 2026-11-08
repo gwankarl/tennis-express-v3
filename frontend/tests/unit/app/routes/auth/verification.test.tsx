@@ -8,14 +8,14 @@ vi.mock('~/.server/api-client.js', () => ({
   ApiRequestError: class ApiRequestError extends Error {},
   requestJson: vi.fn(),
 }));
-vi.mock('~/.server/request-protection.js', () => ({
+vi.mock('~/.server/auth/request-protection.js', () => ({
   issueCsrfToken: vi.fn(),
   RequestProtectionError: class RequestProtectionError extends Error {},
   withProtectedFormRequest: vi.fn(),
 }));
 
-import VerifyEmailPage from '~/routes/verify-email.js';
-import ResendVerificationPage from '~/routes/resend-verification.js';
+import VerifyEmailPage from '~/routes/auth/verify-email.js';
+import ResendVerificationPage from '~/routes/auth/resend-verification.js';
 
 const token = 'A'.repeat(43);
 

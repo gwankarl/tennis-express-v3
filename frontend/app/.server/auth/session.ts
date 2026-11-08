@@ -1,5 +1,5 @@
-import { ApiRequestError, requestJson } from './api-client.js';
-import type { FrontendServerConfig } from './env.js';
+import { ApiRequestError, requestJson } from '../api-client.js';
+import type { FrontendServerConfig } from '../env.js';
 import { issueSessionCsrfToken } from './request-protection.js';
 import { redirect } from 'react-router';
 

@@ -1,6 +1,6 @@
 import type { Route } from './+types/register';
 import { Alert } from '~/components/Alert.js';
-import { AuthCard, AuthPageShell } from '~/components/AuthPageShell.js';
+import { AuthCard, AuthPageShell } from '~/features/auth/AuthLayout.js';
 import { Button } from '~/components/Button.js';
 import { FormField } from '~/components/FormField.js';
 import { PasswordField } from '~/components/PasswordField.js';
@@ -10,7 +10,7 @@ import {
   issueCsrfToken,
   RequestProtectionError,
   withProtectedFormRequest,
-} from '~/.server/request-protection.js';
+} from '~/.server/auth/request-protection.js';
 import { data, Form, useActionData, useLoaderData, useNavigation } from 'react-router';
 
 interface RegistrationResponseData {

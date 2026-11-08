@@ -29,9 +29,9 @@ vi.mock('~/.server/api-client.js', () => {
 });
 
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
-import { issueCsrfToken } from '~/.server/request-protection.js';
-import { action as forgotAction, loader as forgotLoader } from '~/routes/forgot-password.js';
-import { action as resetAction, loader as resetLoader } from '~/routes/reset-password.js';
+import { issueCsrfToken } from '~/.server/auth/request-protection.js';
+import { action as forgotAction, loader as forgotLoader } from '~/routes/auth/forgot-password.js';
+import { action as resetAction, loader as resetLoader } from '~/routes/auth/reset-password.js';
 
 const requestJsonMocked = vi.mocked(requestJson);
 const origin = 'http://127.0.0.1:5173';

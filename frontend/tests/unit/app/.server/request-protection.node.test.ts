@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { issueCsrfToken, withProtectedFormRequest } from '~/.server/request-protection.js';
+import { issueCsrfToken, withProtectedFormRequest } from '~/.server/auth/request-protection.js';
 
 const settings = {
   frontendOrigin: 'http://127.0.0.1:5173',

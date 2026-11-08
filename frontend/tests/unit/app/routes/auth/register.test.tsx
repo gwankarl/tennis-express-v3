@@ -11,13 +11,13 @@ vi.mock('~/.server/api-client.js', () => ({
   requestJson: vi.fn(),
 }));
 
-vi.mock('~/.server/request-protection.js', () => ({
+vi.mock('~/.server/auth/request-protection.js', () => ({
   issueCsrfToken: vi.fn(),
   RequestProtectionError: class RequestProtectionError extends Error {},
   withProtectedFormRequest: vi.fn(),
 }));
 
-import RegisterPage from '~/routes/register.js';
+import RegisterPage from '~/routes/auth/register.js';
 
 function renderRegistration(action: () => unknown = () => undefined) {
   const router = createMemoryRouter(

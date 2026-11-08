@@ -7,14 +7,14 @@ vi.mock('~/.server/api-client.js', () => ({
   ApiRequestError: class ApiRequestError extends Error {},
   requestJson: vi.fn(),
 }));
-vi.mock('~/.server/request-protection.js', () => ({
+vi.mock('~/.server/auth/request-protection.js', () => ({
   issueCsrfToken: vi.fn(),
   RequestProtectionError: class RequestProtectionError extends Error {},
   withProtectedFormRequest: vi.fn(),
 }));
 
-import ForgotPasswordPage from '~/routes/forgot-password.js';
-import ResetPasswordPage from '~/routes/reset-password.js';
+import ForgotPasswordPage from '~/routes/auth/forgot-password.js';
+import ResetPasswordPage from '~/routes/auth/reset-password.js';
 
 const token = 'R'.repeat(43);
 

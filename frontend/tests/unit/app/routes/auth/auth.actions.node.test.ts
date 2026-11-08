@@ -33,9 +33,11 @@ vi.mock('~/.server/api-client.js', () => {
 });
 
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
-import { issueCsrfToken, issueSessionCsrfToken } from '~/.server/request-protection.js';
-import { action as loginAction } from '~/routes/login.js';
-import { action as accountAction, loader as accountLoader } from '~/routes/account.js';
+import { issueCsrfToken, issueSessionCsrfToken } from '~/.server/auth/request-protection.js';
+import { action as loginAction } from '~/routes/auth/login.js';
+import { action as signOutAction } from '~/routes/auth/sign-out.js';
+import { action as changePasswordAction } from '~/routes/account/change-password.js';
+import { loader as accountLoader } from '~/routes/account/index.js';
 
 const requestJsonMocked = vi.mocked(requestJson);
 const origin = 'http://127.0.0.1:5173';
@@ -92,7 +94,9 @@ function makeAccountRequest(
   }
   if (options.csrf !== false) form.set('csrfToken', csrfToken);
 
-  return new Request(`${origin}/account`, {
+  const actionPath = intent === 'logout' ? '/sign-out' : '/account/change-password';
+
+  return new Request(`${origin}${actionPath}`, {
     method: 'POST',
     headers: {
       ...(options.originHeader === undefined ? { origin } : { origin: options.originHeader }),
@@ -101,6 +105,12 @@ function makeAccountRequest(
     },
     body: form,
   });
+}
+
+async function accountAction(args: { request: Request }) {
+  const action =
+    new URL(args.request.url).pathname === '/sign-out' ? signOutAction : changePasswordAction;
+  return action(args as never);
 }
 
 function resultData(result: unknown): Record<string, unknown> {

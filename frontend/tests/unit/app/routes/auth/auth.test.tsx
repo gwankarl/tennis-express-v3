@@ -7,7 +7,7 @@ vi.mock('~/.server/api-client.js', () => ({
   ApiRequestError: class ApiRequestError extends Error {},
   requestJson: vi.fn(),
 }));
-vi.mock('~/.server/request-protection.js', () => ({
+vi.mock('~/.server/auth/request-protection.js', () => ({
   clearAnonymousCsrfCookie: vi.fn(),
   issueCsrfToken: vi.fn(),
   issueSessionCsrfToken: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('~/.server/request-protection.js', () => ({
   withProtectedFormRequest: vi.fn(),
   withProtectedSessionFormRequest: vi.fn(),
 }));
-vi.mock('~/.server/session.js', () => ({
+vi.mock('~/.server/auth/session.js', () => ({
   appendSessionCookie: vi.fn(),
   clearSessionCookie: vi.fn(),
   loadProtectedUser: vi.fn(),
@@ -23,8 +23,9 @@ vi.mock('~/.server/session.js', () => ({
   safeReturnTo: vi.fn((value: string | null | undefined) => value ?? '/account'),
 }));
 
-import LoginPage from '~/routes/login.js';
-import AccountPage from '~/routes/account.js';
+import LoginPage from '~/routes/auth/login.js';
+import AccountPage from '~/routes/account/index.js';
+import ChangePasswordPage from '~/routes/account/change-password.js';
 
 function renderLogin(
   action: () => unknown = () => undefined,
@@ -65,7 +66,22 @@ function renderAccount(loaderData: Record<string, unknown>) {
   return router;
 }
 
-describe('sign-in and account UI', () => {
+function renderChangePassword(loaderData: Record<string, unknown>) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/account/change-password',
+        loader: () => loaderData,
+        Component: ChangePasswordPage,
+      },
+    ],
+    { initialEntries: ['/account/change-password'] },
+  );
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
+describe('authentication and account UI', () => {
   it('shows the password-change confirmation on sign-in', async () => {
     renderLogin(undefined, { passwordChanged: true });
     expect(
@@ -104,8 +120,8 @@ describe('sign-in and account UI', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Signing in…');
-    expect(screen.getByRole('button', { name: 'Signing in…' })).toBeDisabled();
+    expect(await screen.findByRole('status')).toHaveTextContent('Signing in');
+    expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled();
 
     await act(async () => finish({ status: 'invalid' }));
   });
@@ -118,23 +134,34 @@ describe('sign-in and account UI', () => {
     );
   });
 
-  it('shows only the current account email and a sign-out form', async () => {
+  it('shows the current account email, change-password link, and sign-out form', async () => {
     renderAccount({
       status: 'authenticated',
       user: { id: '7ad9dc2c-308e-4a1a-8c45-a9e9e3e7b5dc', email: 'player@example.test' },
       csrfToken: 'csrf-test',
+      signOutMessage: null,
     });
 
     expect(await screen.findByRole('heading', { name: 'Your account' })).toBeInTheDocument();
     expect(screen.getByText('player@example.test')).toBeInTheDocument();
-    expect(screen.getByLabelText('Current password')).toBeInTheDocument();
-    expect(screen.getByLabelText('New password')).toBeInTheDocument();
-    expect(screen.getByText('Use 15–128 characters. A passphrase works well.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change password' })).toHaveAttribute(
+      'href',
+      '/account/change-password',
+    );
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 
-  it('shows a retry message instead of treating an API outage as sign-out', async () => {
+  it('renders labeled password fields on the change-password page', async () => {
+    renderChangePassword({ status: 'authenticated', csrfToken: 'csrf-test' });
+
+    expect(await screen.findByRole('heading', { name: 'Change password' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument();
+    expect(screen.getByLabelText('New password')).toBeInTheDocument();
+    expect(screen.getByText(/Use 15.*128 characters\. A passphrase works well\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+  });
+
+  it('shows an unavailable message instead of treating an API outage as sign-out', async () => {
     renderAccount({ status: 'unavailable' });
     expect(
       await screen.findByRole('heading', { name: 'Account temporarily unavailable' }),

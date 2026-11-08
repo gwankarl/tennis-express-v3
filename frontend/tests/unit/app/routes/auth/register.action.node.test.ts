@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ApiErrorDetail } from '../../../../../backend/src/http/contract';
+import type { ApiErrorDetail } from '../../../../../../backend/src/http/contract';
 
 const { loadConfigMock } = vi.hoisted(() => ({
   loadConfigMock: vi.fn(),
@@ -40,8 +40,8 @@ vi.mock('~/.server/api-client.js', () => {
 });
 
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
-import { issueCsrfToken } from '~/.server/request-protection.js';
-import { action } from '~/routes/register.js';
+import { issueCsrfToken } from '~/.server/auth/request-protection.js';
+import { action } from '~/routes/auth/register.js';
 
 const requestJsonMock = vi.mocked(requestJson);
 const settings = {

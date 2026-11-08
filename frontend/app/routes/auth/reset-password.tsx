@@ -1,6 +1,6 @@
 import type { Route } from './+types/reset-password';
 import { Alert } from '~/components/Alert.js';
-import { AuthCard, AuthPageShell } from '~/components/AuthPageShell.js';
+import { AuthCard, AuthPageShell } from '~/features/auth/AuthLayout.js';
 import { Button } from '~/components/Button.js';
 import { PasswordField } from '~/components/PasswordField.js';
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
@@ -9,7 +9,7 @@ import {
   issueCsrfToken,
   RequestProtectionError,
   withProtectedFormRequest,
-} from '~/.server/request-protection.js';
+} from '~/.server/auth/request-protection.js';
 import { data, Link, redirect, useFetcher, useLoaderData, useSearchParams } from 'react-router';
 
 interface ResetPasswordResponseData {

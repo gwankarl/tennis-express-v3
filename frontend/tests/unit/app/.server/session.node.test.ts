@@ -29,11 +29,11 @@ import {
   appendSessionCookie,
   loadProtectedUser,
   safeReturnTo,
-} from '~/.server/session.js';
+} from '~/.server/auth/session.js';
 import {
   issueSessionCsrfToken,
   withProtectedSessionFormRequest,
-} from '~/.server/request-protection.js';
+} from '~/.server/auth/request-protection.js';
 
 const origin = 'http://127.0.0.1:5173';
 const sessionToken = 'S'.repeat(43);

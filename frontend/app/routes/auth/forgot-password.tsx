@@ -1,6 +1,6 @@
 import type { Route } from './+types/forgot-password';
 import { Alert } from '~/components/Alert.js';
-import { AuthCard, AuthPageShell } from '~/components/AuthPageShell.js';
+import { AuthCard, AuthPageShell } from '~/features/auth/AuthLayout.js';
 import { Button } from '~/components/Button.js';
 import { FormField } from '~/components/FormField.js';
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
@@ -9,7 +9,7 @@ import {
   issueCsrfToken,
   RequestProtectionError,
   withProtectedFormRequest,
-} from '~/.server/request-protection.js';
+} from '~/.server/auth/request-protection.js';
 import { data, Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router';
 
 interface ForgotPasswordResponseData {
