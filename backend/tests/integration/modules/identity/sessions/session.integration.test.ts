@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import { hashPassword } from '../../../../../src/modules/identity/passwords/credentials.js';
+import { identityCredentials } from '../../../../../src/modules/identity/passwords/credentials.table.js';
 import { buildApp } from '../../../../../src/app.js';
 import type { ApiErrorResponse } from '../../../../../src/http/contract.js';
 import { requireAuthentication } from '../../../../../src/http/guards/authenticate.js';
@@ -46,10 +48,11 @@ async function createUser(
   options: {
     status?: string;
     emailVerifiedAt?: Date | null;
+    email?: string;
   } = {},
 ): Promise<string> {
   userSequence += 1;
-  const email = `session-${runId}-${userSequence}@example.test`;
+  const email = options.email ?? `session-${runId}-${userSequence}@example.test`;
 
   const users = await getDatabase()
     .db.insert(identityUsers)
@@ -67,6 +70,26 @@ async function createUser(
 
   fixtureUserIds.push(user.id);
   return user.id;
+}
+
+async function createLoginUser(
+  options: {
+    status?: string;
+    emailVerifiedAt?: Date | null;
+    password?: string;
+  } = {},
+): Promise<{ userId: string; email: string; password: string }> {
+  const password = options.password ?? 'correct horse battery staple';
+  const email = `login-${runId}-${userSequence}@example.test`;
+  const userId = await createUser({ ...options, email });
+  const passwordHash = await hashPassword(password);
+
+  await getDatabase().db.insert(identityCredentials).values({
+    userId,
+    passwordHash,
+  });
+
+  return { userId, email, password };
 }
 
 async function findSession(tokenDigest: string) {
@@ -333,5 +356,132 @@ describe('Fastify authentication guard', () => {
     expect(response.json()).toEqual({ data: { userId } });
     expect(response.body).not.toContain(created.rawToken);
     expect(response.body).not.toContain('tokenDigest');
+  });
+});
+
+describe('identity login and session routes', () => {
+  it('logs in, reads /me, logs out only that session, and preserves a second session', async () => {
+    const fixture = await createLoginUser();
+    const secondSession = await createSession(getDatabase().db, fixture.userId);
+
+    if (!secondSession) throw new Error('Expected the second session to be created.');
+
+    const loginResponse = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      remoteAddress: '192.0.2.201',
+      payload: { email: fixture.email.toUpperCase(), password: fixture.password },
+    });
+
+    expect(loginResponse.statusCode).toBe(200);
+    expect(loginResponse.headers['cache-control']).toContain('no-store');
+
+    const loginBody = loginResponse.json<{
+      data: { sessionToken: string; tokenType: 'Bearer'; expiresAt: string };
+    }>();
+    expect(loginBody.data.tokenType).toBe('Bearer');
+    expect(loginBody.data.sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(loginBody.data.expiresAt).toBeTruthy();
+
+    const meResponse = await getApp().inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${loginBody.data.sessionToken}` },
+    });
+
+    expect(meResponse.statusCode).toBe(200);
+    expect(meResponse.json()).toEqual({
+      data: { id: fixture.userId, email: fixture.email },
+    });
+
+    const logoutResponse = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/logout',
+      headers: { authorization: `Bearer ${loginBody.data.sessionToken}` },
+    });
+
+    expect(logoutResponse.statusCode).toBe(200);
+    expect(logoutResponse.json()).toEqual({ data: { status: 'logged_out' } });
+
+    const revokedSessionResponse = await getApp().inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${loginBody.data.sessionToken}` },
+    });
+    const secondSessionResponse = await getApp().inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${secondSession.rawToken}` },
+    });
+
+    expect(revokedSessionResponse.statusCode).toBe(401);
+    expect(secondSessionResponse.statusCode).toBe(200);
+  });
+
+  it.each([
+    ['wrong password', 'active', baseTime, 'incorrect password'],
+    ['unverified account', 'active', null, 'correct horse battery staple'],
+    ['suspended account', 'suspended', baseTime, 'correct horse battery staple'],
+  ])('returns the same generic 401 for %s', async (_case, status, verifiedAt, password) => {
+    const fixture = await createLoginUser({
+      status: status as string,
+      emailVerifiedAt: verifiedAt as Date | null,
+    });
+
+    const response = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      remoteAddress: `192.0.2.${210 + userSequence}`,
+      payload: { email: fixture.email, password },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: 'REQUEST_ERROR', message: 'Request failed' },
+    });
+    expect(response.json().requestId).toBe(response.headers['x-request-id']);
+    expect(response.body).not.toContain(fixture.password);
+  });
+
+  it('returns the same generic 401 for an unknown email', async () => {
+    const response = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      remoteAddress: '192.0.2.230',
+      payload: {
+        email: `unknown-${runId}@example.test`,
+        password: 'correct horse battery staple',
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: 'REQUEST_ERROR', message: 'Request failed' },
+    });
+    expect(response.json().requestId).toBe(response.headers['x-request-id']);
+  });
+
+  it('rate-limits login attempts by IP before password verification', async () => {
+    const fixture = await createLoginUser();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await getApp().inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        remoteAddress: '192.0.2.240',
+        payload: { email: fixture.email, password: 'wrong password' },
+      });
+      expect(response.statusCode).toBe(401);
+    }
+
+    const limited = await getApp().inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      remoteAddress: '192.0.2.240',
+      payload: { email: fixture.email, password: 'wrong password' },
+    });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().error.code).toBe('REQUEST_ERROR');
   });
 });

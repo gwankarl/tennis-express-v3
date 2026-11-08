@@ -1,4 +1,5 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
+import { identityCredentials } from '../passwords/credentials.table.js';
 import type { DatabaseClient } from '../../../infrastructure/database/client.js';
 import { identityUsers } from '../accounts/user.table.js';
 import { digestIdentityToken, generateSessionToken } from '../token.js';
@@ -40,6 +41,7 @@ export async function createSession(
   db: DatabaseClient['db'],
   userId: string,
   now = new Date(),
+  expectedPasswordHash?: string,
 ): Promise<CreatedSession | undefined> {
   assertValidDate(now);
 
@@ -58,6 +60,18 @@ export async function createSession(
 
     if (!user || !isAccountEligible(user.status, user.emailVerifiedAt)) {
       return undefined;
+    }
+
+    if (expectedPasswordHash !== undefined) {
+      const credentials = await transaction
+        .select({ passwordHash: identityCredentials.passwordHash })
+        .from(identityCredentials)
+        .where(eq(identityCredentials.userId, userId))
+        .limit(1);
+
+      if (credentials[0]?.passwordHash !== expectedPasswordHash) {
+        return undefined;
+      }
     }
 
     const { rawToken, digest } = generateSessionToken();
