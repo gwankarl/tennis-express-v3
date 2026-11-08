@@ -21,20 +21,17 @@ describe('parseFrontendEnv', () => {
   it.each(['backend.local', 'ftp://backend.local', ''])(
     'rejects malformed backend URL %s',
     (url) => {
-      expect(() =>
-        parseFrontendEnv({ ...validEnv, BACKEND_API_BASE_URL: url }),
-      ).toThrow(FrontendEnvValidationError);
+      expect(() => parseFrontendEnv({ ...validEnv, BACKEND_API_BASE_URL: url })).toThrow(
+        FrontendEnvValidationError,
+      );
     },
   );
 
-  it.each(['0', '-1', '1.5', 'abc', ''])(
-    'rejects invalid backend timeout %s',
-    (timeout) => {
-      expect(() =>
-        parseFrontendEnv({ ...validEnv, BACKEND_API_TIMEOUT_MS: timeout }),
-      ).toThrow(FrontendEnvValidationError);
-    },
-  );
+  it.each(['0', '-1', '1.5', 'abc', ''])('rejects invalid backend timeout %s', (timeout) => {
+    expect(() => parseFrontendEnv({ ...validEnv, BACKEND_API_TIMEOUT_MS: timeout })).toThrow(
+      FrontendEnvValidationError,
+    );
+  });
 
   it.each([
     'localhost:5173',

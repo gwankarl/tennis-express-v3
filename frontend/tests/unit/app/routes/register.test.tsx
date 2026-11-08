@@ -41,9 +41,7 @@ describe('registration page', () => {
   it('shows the labeled form, password hint, home link, and show-password control', async () => {
     renderRegistration();
 
-    expect(
-      await screen.findByRole('heading', { name: 'Create your account' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Create your account' })).toBeInTheDocument();
     expect(screen.getByLabelText('Email address')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password');
     expect(screen.getByText('Use 15–128 characters. A passphrase works well.')).toBeInTheDocument();

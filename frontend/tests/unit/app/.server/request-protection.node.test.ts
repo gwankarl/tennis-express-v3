@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  issueCsrfToken,
-  withProtectedFormRequest,
-} from '~/.server/request-protection.js';
+import { issueCsrfToken, withProtectedFormRequest } from '~/.server/request-protection.js';
 
 const settings = {
   frontendOrigin: 'http://127.0.0.1:5173',
@@ -88,11 +85,10 @@ describe('request protection', () => {
   it('marks the anonymous cookie Secure for HTTPS origins', () => {
     const responseHeaders = new Headers();
 
-    issueCsrfToken(
-      new Request('https://tennis.example'),
-      responseHeaders,
-      { ...settings, frontendOrigin: 'https://tennis.example' },
-    );
+    issueCsrfToken(new Request('https://tennis.example'), responseHeaders, {
+      ...settings,
+      frontendOrigin: 'https://tennis.example',
+    });
 
     expect(responseHeaders.get('set-cookie')).toContain('; Secure');
   });
