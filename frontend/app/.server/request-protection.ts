@@ -122,6 +122,129 @@ export async function withProtectedFormRequest<T>(
   return backendCall(form);
 }
 
+const SESSION_CSRF_TTL_SECONDS = 15 * 60;
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
+
+/**
+ * Issues a short-lived CSRF token bound to the current bearer session.
+ * The session token itself is never included in this token.
+ */
+export function issueSessionCsrfToken(
+  request: Request,
+  sessionToken: string,
+  settings: RequestProtectionSettings,
+): string {
+  assertSigningSecret(settings.csrfSecret);
+  assertPageOrigin(request, settings.frontendOrigin);
+
+  if (!SESSION_TOKEN_PATTERN.test(sessionToken)) {
+    throw new RequestProtectionError(403, 'The session could not be verified.');
+  }
+
+  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_CSRF_TTL_SECONDS;
+  const binding = sign(settings.csrfSecret, `session:${sessionToken}`);
+  const signature = sign(settings.csrfSecret, `session-csrf:${binding}:${expiresAt}`);
+
+  return `v1.${expiresAt}.${signature}`;
+}
+
+/**
+ * Verifies a signed-in form's origin and CSRF token before running its callback.
+ */
+export async function withProtectedSessionFormRequest<T>(
+  request: Request,
+  sessionToken: string,
+  settings: RequestProtectionSettings,
+  operation: (form: URLSearchParams) => Promise<T> | T,
+): Promise<T> {
+  assertSigningSecret(settings.csrfSecret);
+  assertTrustedRequestOrigin(request, settings.frontendOrigin);
+
+  if (request.method !== 'POST' || !SESSION_TOKEN_PATTERN.test(sessionToken)) {
+    throw new RequestProtectionError(403, 'The form could not be verified.');
+  }
+
+  const form = await readBoundedForm(request);
+  const submittedTokens = form.getAll('csrfToken');
+
+  if (
+    submittedTokens.length !== 1 ||
+    !verifySessionCsrfToken(submittedTokens[0] ?? '', sessionToken, settings)
+  ) {
+    throw new RequestProtectionError(403, 'The form could not be verified.');
+  }
+
+  return operation(form);
+}
+
+/** Clears the anonymous CSRF cookie after a successful sign-in. */
+export function clearAnonymousCsrfCookie(
+  request: Request,
+  responseHeaders: Headers,
+  settings: RequestProtectionSettings,
+): void {
+  const secure = assertPageOrigin(request, settings.frontendOrigin);
+  const attributes = [
+    `${COOKIE_NAME}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+    'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+  ];
+
+  if (secure) {
+    attributes.push('Secure');
+  }
+
+  responseHeaders.append('Set-Cookie', attributes.join('; '));
+}
+
+function verifySessionCsrfToken(
+  value: string,
+  sessionToken: string,
+  settings: RequestProtectionSettings,
+): boolean {
+  const parts = value.split('.');
+
+  if (parts.length !== 3 || parts[0] !== 'v1' || !/^\d+$/u.test(parts[1] ?? '')) {
+    return false;
+  }
+
+  const expiresAt = Number(parts[1]);
+
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) {
+    return false;
+  }
+
+  const binding = sign(settings.csrfSecret, `session:${sessionToken}`);
+  const expected = sign(settings.csrfSecret, `session-csrf:${binding}:${expiresAt}`);
+
+  return safeEqual(parts[2] ?? '', expected);
+}
+
+/**
+ * Confirms the server-rendered page uses the configured origin and allows
+ * insecure cookies only on loopback HTTP.
+ */
+function assertPageOrigin(request: Request, frontendOrigin: string): boolean {
+  const url = new URL(request.url);
+
+  if (url.origin !== frontendOrigin) {
+    throw new RequestProtectionError(403, 'Request origin could not be verified.');
+  }
+
+  if (url.protocol === 'https:') {
+    return true;
+  }
+
+  if (url.protocol === 'http:' && isLoopbackHost(url.hostname)) {
+    return false;
+  }
+
+  throw new RequestProtectionError(403, 'Secure form protection is unavailable.');
+}
+
 function assertTrustedRequestOrigin(request: Request, frontendOrigin: string): void {
   const origin = request.headers.get('origin');
 
