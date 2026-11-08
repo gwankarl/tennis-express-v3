@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyRateLimit from '@fastify/rate-limit';
 import type { EmailSender } from './infrastructure/email/email-sender.js';
 import { registerRegistrationRoutes } from './modules/identity/accounts/registration.routes.js';
+import { registerUserProfileRoutes } from './modules/identity/accounts/profile.routes.js';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import { registerErrorHandlers } from './http/error-handler.js';
@@ -90,6 +91,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerSessionAuthRoutes(app);
     registerPasswordRecoveryRoutes(app);
     registerPasswordChangeRoutes(app);
+    registerUserProfileRoutes(app);
   });
 
   return app;

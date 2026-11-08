@@ -7,6 +7,7 @@ export const identityUsers = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     deliveryEmail: text('delivery_email').notNull(),
     normalizedEmail: text('normalized_email').notNull(),
+    displayName: text('display_name'),
     status: text('status').notNull(),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
