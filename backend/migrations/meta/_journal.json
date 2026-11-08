@@ -15,6 +15,13 @@
       "when": 1794150783070,
       "tag": "0001_round_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794173292402,
+      "tag": "0002_wealthy_frightful_four",
+      "breakpoints": true
     }
   ]
 }

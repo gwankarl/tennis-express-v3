@@ -14,6 +14,8 @@ export const identitySessions = pgTable(
     idleExpiresAt: timestamp('idle_expires_at', { withTimezone: true }).notNull(),
     absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    adminMfaElevatedAt: timestamp('admin_mfa_elevated_at', { withTimezone: true }),
+    adminMfaElevatedUntil: timestamp('admin_mfa_elevated_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -25,6 +27,22 @@ export const identitySessions = pgTable(
     check(
       'identity_sessions_idle_before_absolute_ck',
       sql`${table.idleExpiresAt} <= ${table.absoluteExpiresAt}`,
+    ),
+    index('identity_sessions_user_admin_mfa_until_idx').on(
+      table.userId,
+      table.adminMfaElevatedUntil,
+    ),
+    check(
+      'identity_sessions_admin_mfa_elevation_ck',
+      sql`(
+        (${table.adminMfaElevatedAt} IS NULL
+          AND ${table.adminMfaElevatedUntil} IS NULL)
+        OR
+        (${table.adminMfaElevatedAt} IS NOT NULL
+          AND ${table.adminMfaElevatedUntil} IS NOT NULL
+          AND ${table.adminMfaElevatedUntil} > ${table.adminMfaElevatedAt}
+          AND ${table.adminMfaElevatedUntil} <= ${table.absoluteExpiresAt})
+      )`,
     ),
   ],
 );

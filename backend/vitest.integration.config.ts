@@ -1,4 +1,7 @@
 import { defineConfig } from 'vitest/config';
+import { loadBackendEnv } from './src/config/env.js';
+
+loadBackendEnv();
 
 export default defineConfig({
   test: {

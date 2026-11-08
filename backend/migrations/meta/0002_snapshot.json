@@ -1,0 +1,1436 @@
+{
+  "id": "f6f5f442-a43e-4f3f-9d82-f0d7b01fb6fa",
+  "prevId": "9a809029-38f8-4781-a1d0-2772a5f86248",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.identity_users": {
+      "name": "identity_users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "delivery_email": {
+          "name": "delivery_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_email": {
+          "name": "normalized_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified_at": {
+          "name": "email_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_users_normalized_email_uq": {
+          "name": "identity_users_normalized_email_uq",
+          "columns": [
+            {
+              "expression": "normalized_email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_users_status_idx": {
+          "name": "identity_users_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_users_emails_not_blank_ck": {
+          "name": "identity_users_emails_not_blank_ck",
+          "value": "\"identity_users\".\"delivery_email\" <> '' AND \"identity_users\".\"normalized_email\" <> ''"
+        },
+        "identity_users_normalized_email_lowercase_ck": {
+          "name": "identity_users_normalized_email_lowercase_ck",
+          "value": "\"identity_users\".\"normalized_email\" = lower(btrim(\"identity_users\".\"normalized_email\"))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_user_permissions": {
+      "name": "identity_user_permissions",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "identity_permission",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "identity_user_permissions_user_id_identity_users_id_fk": {
+          "name": "identity_user_permissions_user_id_identity_users_id_fk",
+          "tableFrom": "identity_user_permissions",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "identity_user_permissions_pk": {
+          "name": "identity_user_permissions_pk",
+          "columns": [
+            "user_id",
+            "permission"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.identity_credentials": {
+      "name": "identity_credentials",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "identity_credentials_user_id_identity_users_id_fk": {
+          "name": "identity_credentials_user_id_identity_users_id_fk",
+          "tableFrom": "identity_credentials",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.identity_sessions": {
+      "name": "identity_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_digest": {
+          "name": "token_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "idle_expires_at": {
+          "name": "idle_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_expires_at": {
+          "name": "absolute_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_mfa_elevated_at": {
+          "name": "admin_mfa_elevated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_mfa_elevated_until": {
+          "name": "admin_mfa_elevated_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_sessions_token_digest_uq": {
+          "name": "identity_sessions_token_digest_uq",
+          "columns": [
+            {
+              "expression": "token_digest",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_sessions_user_revoked_idx": {
+          "name": "identity_sessions_user_revoked_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "revoked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_sessions_idle_expires_idx": {
+          "name": "identity_sessions_idle_expires_idx",
+          "columns": [
+            {
+              "expression": "idle_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_sessions_absolute_expires_idx": {
+          "name": "identity_sessions_absolute_expires_idx",
+          "columns": [
+            {
+              "expression": "absolute_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_sessions_user_admin_mfa_until_idx": {
+          "name": "identity_sessions_user_admin_mfa_until_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "admin_mfa_elevated_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_sessions_user_id_identity_users_id_fk": {
+          "name": "identity_sessions_user_id_identity_users_id_fk",
+          "tableFrom": "identity_sessions",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_sessions_token_digest_not_blank_ck": {
+          "name": "identity_sessions_token_digest_not_blank_ck",
+          "value": "\"identity_sessions\".\"token_digest\" <> ''"
+        },
+        "identity_sessions_idle_before_absolute_ck": {
+          "name": "identity_sessions_idle_before_absolute_ck",
+          "value": "\"identity_sessions\".\"idle_expires_at\" <= \"identity_sessions\".\"absolute_expires_at\""
+        },
+        "identity_sessions_admin_mfa_elevation_ck": {
+          "name": "identity_sessions_admin_mfa_elevation_ck",
+          "value": "(\n        (\"identity_sessions\".\"admin_mfa_elevated_at\" IS NULL\n          AND \"identity_sessions\".\"admin_mfa_elevated_until\" IS NULL)\n        OR\n        (\"identity_sessions\".\"admin_mfa_elevated_at\" IS NOT NULL\n          AND \"identity_sessions\".\"admin_mfa_elevated_until\" IS NOT NULL\n          AND \"identity_sessions\".\"admin_mfa_elevated_until\" > \"identity_sessions\".\"admin_mfa_elevated_at\"\n          AND \"identity_sessions\".\"admin_mfa_elevated_until\" <= \"identity_sessions\".\"absolute_expires_at\")\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_tokens": {
+      "name": "identity_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "identity_token_purpose",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_digest": {
+          "name": "token_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_tokens_token_digest_uq": {
+          "name": "identity_tokens_token_digest_uq",
+          "columns": [
+            {
+              "expression": "token_digest",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_tokens_user_purpose_created_idx": {
+          "name": "identity_tokens_user_purpose_created_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "purpose",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_tokens_expires_idx": {
+          "name": "identity_tokens_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_tokens_user_id_identity_users_id_fk": {
+          "name": "identity_tokens_user_id_identity_users_id_fk",
+          "tableFrom": "identity_tokens",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_tokens_token_digest_not_blank_ck": {
+          "name": "identity_tokens_token_digest_not_blank_ck",
+          "value": "\"identity_tokens\".\"token_digest\" <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_admin_audit_events": {
+      "name": "identity_admin_audit_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "identity_admin_audit_event_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "identity_admin_audit_outcome",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "identity_admin_audit_actor_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_operator_id": {
+          "name": "actor_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approver_operator_id": {
+          "name": "approver_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_user_id": {
+          "name": "target_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_admin_audit_events_target_time_idx": {
+          "name": "identity_admin_audit_events_target_time_idx",
+          "columns": [
+            {
+              "expression": "target_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_admin_audit_events_type_time_idx": {
+          "name": "identity_admin_audit_events_type_time_idx",
+          "columns": [
+            {
+              "expression": "event_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_admin_audit_events_actor_shape_ck": {
+          "name": "identity_admin_audit_events_actor_shape_ck",
+          "value": "(\n        (\"identity_admin_audit_events\".\"actor_type\" = 'user'\n          AND \"identity_admin_audit_events\".\"actor_user_id\" IS NOT NULL\n          AND \"identity_admin_audit_events\".\"actor_operator_id\" IS NULL)\n        OR\n        (\"identity_admin_audit_events\".\"actor_type\" = 'operator'\n          AND \"identity_admin_audit_events\".\"actor_user_id\" IS NULL\n          AND \"identity_admin_audit_events\".\"actor_operator_id\" IS NOT NULL)\n        OR\n        (\"identity_admin_audit_events\".\"actor_type\" = 'system'\n          AND \"identity_admin_audit_events\".\"actor_user_id\" IS NULL\n          AND \"identity_admin_audit_events\".\"actor_operator_id\" IS NULL)\n      )"
+        },
+        "identity_admin_audit_events_approvers_distinct_ck": {
+          "name": "identity_admin_audit_events_approvers_distinct_ck",
+          "value": "\"identity_admin_audit_events\".\"approver_operator_id\" IS NULL\n        OR \"identity_admin_audit_events\".\"actor_operator_id\" IS NULL\n        OR \"identity_admin_audit_events\".\"approver_operator_id\" <> \"identity_admin_audit_events\".\"actor_operator_id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_admin_enrollment_authorizations": {
+      "name": "identity_admin_enrollment_authorizations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "target_user_id": {
+          "name": "target_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authorization_digest": {
+          "name": "authorization_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_by_operator_id": {
+          "name": "issued_by_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_by_operator_id": {
+          "name": "approved_by_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "identity_admin_enrollment_authorizations_digest_uq": {
+          "name": "identity_admin_enrollment_authorizations_digest_uq",
+          "columns": [
+            {
+              "expression": "authorization_digest",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_admin_enrollment_authorizations_target_expiry_idx": {
+          "name": "identity_admin_enrollment_authorizations_target_expiry_idx",
+          "columns": [
+            {
+              "expression": "target_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_admin_enrollment_authorizations_target_user_id_identity_users_id_fk": {
+          "name": "identity_admin_enrollment_authorizations_target_user_id_identity_users_id_fk",
+          "tableFrom": "identity_admin_enrollment_authorizations",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "target_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_admin_enrollment_authorizations_digest_not_blank_ck": {
+          "name": "identity_admin_enrollment_authorizations_digest_not_blank_ck",
+          "value": "\"identity_admin_enrollment_authorizations\".\"authorization_digest\" <> ''"
+        },
+        "identity_admin_enrollment_authorizations_operators_distinct_ck": {
+          "name": "identity_admin_enrollment_authorizations_operators_distinct_ck",
+          "value": "\"identity_admin_enrollment_authorizations\".\"issued_by_operator_id\" <> \"identity_admin_enrollment_authorizations\".\"approved_by_operator_id\""
+        },
+        "identity_admin_enrollment_authorizations_expiry_ck": {
+          "name": "identity_admin_enrollment_authorizations_expiry_ck",
+          "value": "\"identity_admin_enrollment_authorizations\".\"expires_at\" > \"identity_admin_enrollment_authorizations\".\"issued_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_mfa_attempt_counters": {
+      "name": "identity_mfa_attempt_counters",
+      "schema": "",
+      "columns": {
+        "scope": {
+          "name": "scope",
+          "type": "identity_mfa_attempt_scope",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "identity_mfa_attempt_action",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_digest": {
+          "name": "subject_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_started_at": {
+          "name": "window_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "blocked_until": {
+          "name": "blocked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_mfa_attempt_counters_blocked_idx": {
+          "name": "identity_mfa_attempt_counters_blocked_idx",
+          "columns": [
+            {
+              "expression": "blocked_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "identity_mfa_attempt_counters_pk": {
+          "name": "identity_mfa_attempt_counters_pk",
+          "columns": [
+            "scope",
+            "action",
+            "subject_digest"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_mfa_attempt_counters_subject_not_blank_ck": {
+          "name": "identity_mfa_attempt_counters_subject_not_blank_ck",
+          "value": "\"identity_mfa_attempt_counters\".\"subject_digest\" <> ''"
+        },
+        "identity_mfa_attempt_counters_nonnegative_ck": {
+          "name": "identity_mfa_attempt_counters_nonnegative_ck",
+          "value": "\"identity_mfa_attempt_counters\".\"attempt_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_mfa_factors": {
+      "name": "identity_mfa_factors",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "factor_type": {
+          "name": "factor_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'totp'"
+        },
+        "status": {
+          "name": "status",
+          "type": "identity_mfa_factor_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_ciphertext": {
+          "name": "secret_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_version": {
+          "name": "key_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pending_expires_at": {
+          "name": "pending_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_accepted_time_step": {
+          "name": "last_accepted_time_step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "identity_mfa_factors_one_current_per_user_uq": {
+          "name": "identity_mfa_factors_one_current_per_user_uq",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"identity_mfa_factors\".\"status\" IN ('pending', 'active')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_mfa_factors_user_status_idx": {
+          "name": "identity_mfa_factors_user_status_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_mfa_factors_user_id_identity_users_id_fk": {
+          "name": "identity_mfa_factors_user_id_identity_users_id_fk",
+          "tableFrom": "identity_mfa_factors",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_mfa_factors_type_ck": {
+          "name": "identity_mfa_factors_type_ck",
+          "value": "\"identity_mfa_factors\".\"factor_type\" = 'totp'"
+        },
+        "identity_mfa_factors_secret_not_blank_ck": {
+          "name": "identity_mfa_factors_secret_not_blank_ck",
+          "value": "\"identity_mfa_factors\".\"secret_ciphertext\" <> '' AND \"identity_mfa_factors\".\"key_version\" <> ''"
+        },
+        "identity_mfa_factors_state_ck": {
+          "name": "identity_mfa_factors_state_ck",
+          "value": "(\n        (\"identity_mfa_factors\".\"status\" = 'pending'\n          AND \"identity_mfa_factors\".\"pending_expires_at\" IS NOT NULL\n          AND \"identity_mfa_factors\".\"confirmed_at\" IS NULL\n          AND \"identity_mfa_factors\".\"revoked_at\" IS NULL)\n        OR\n        (\"identity_mfa_factors\".\"status\" = 'active'\n          AND \"identity_mfa_factors\".\"pending_expires_at\" IS NULL\n          AND \"identity_mfa_factors\".\"confirmed_at\" IS NOT NULL\n          AND \"identity_mfa_factors\".\"revoked_at\" IS NULL)\n        OR\n        (\"identity_mfa_factors\".\"status\" = 'revoked' AND \"identity_mfa_factors\".\"revoked_at\" IS NOT NULL)\n      )"
+        },
+        "identity_mfa_factors_last_step_nonnegative_ck": {
+          "name": "identity_mfa_factors_last_step_nonnegative_ck",
+          "value": "\"identity_mfa_factors\".\"last_accepted_time_step\" IS NULL OR \"identity_mfa_factors\".\"last_accepted_time_step\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_mfa_recoveries": {
+      "name": "identity_mfa_recoveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "identity_mfa_recovery_method",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "identity_mfa_recovery_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_by_operator_id": {
+          "name": "requested_by_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by_operator_id": {
+          "name": "approved_by_operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_hold_until": {
+          "name": "admin_hold_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "identity_mfa_recoveries_one_open_per_user_uq": {
+          "name": "identity_mfa_recoveries_one_open_per_user_uq",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"identity_mfa_recoveries\".\"status\" IN ('requested', 'approved')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_mfa_recoveries_user_hold_idx": {
+          "name": "identity_mfa_recoveries_user_hold_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "admin_hold_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_mfa_recoveries_user_id_identity_users_id_fk": {
+          "name": "identity_mfa_recoveries_user_id_identity_users_id_fk",
+          "tableFrom": "identity_mfa_recoveries",
+          "tableTo": "identity_users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_mfa_recoveries_operator_approvals_distinct_ck": {
+          "name": "identity_mfa_recoveries_operator_approvals_distinct_ck",
+          "value": "\"identity_mfa_recoveries\".\"requested_by_operator_id\" IS NULL\n        OR \"identity_mfa_recoveries\".\"approved_by_operator_id\" IS NULL\n        OR \"identity_mfa_recoveries\".\"requested_by_operator_id\" <> \"identity_mfa_recoveries\".\"approved_by_operator_id\""
+        },
+        "identity_mfa_recoveries_operator_approval_required_ck": {
+          "name": "identity_mfa_recoveries_operator_approval_required_ck",
+          "value": "\"identity_mfa_recoveries\".\"method\" <> 'operator'\n        OR \"identity_mfa_recoveries\".\"status\" NOT IN ('approved', 'completed')\n        OR (\"identity_mfa_recoveries\".\"requested_by_operator_id\" IS NOT NULL\n          AND \"identity_mfa_recoveries\".\"approved_by_operator_id\" IS NOT NULL)"
+        },
+        "identity_mfa_recoveries_approval_timestamp_pair_ck": {
+          "name": "identity_mfa_recoveries_approval_timestamp_pair_ck",
+          "value": "(\"identity_mfa_recoveries\".\"approved_at\" IS NULL) = (\"identity_mfa_recoveries\".\"approved_by_operator_id\" IS NULL)"
+        },
+        "identity_mfa_recoveries_hold_timestamp_ck": {
+          "name": "identity_mfa_recoveries_hold_timestamp_ck",
+          "value": "(\n        (\"identity_mfa_recoveries\".\"completed_at\" IS NULL AND \"identity_mfa_recoveries\".\"admin_hold_until\" IS NULL)\n        OR\n        (\"identity_mfa_recoveries\".\"completed_at\" IS NOT NULL\n          AND \"identity_mfa_recoveries\".\"admin_hold_until\" = \"identity_mfa_recoveries\".\"completed_at\" + interval '24 hours')\n      )"
+        },
+        "identity_mfa_recoveries_completed_state_ck": {
+          "name": "identity_mfa_recoveries_completed_state_ck",
+          "value": "\"identity_mfa_recoveries\".\"status\" <> 'completed' OR \"identity_mfa_recoveries\".\"completed_at\" IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.identity_mfa_recovery_codes": {
+      "name": "identity_mfa_recovery_codes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "factor_id": {
+          "name": "factor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_digest": {
+          "name": "code_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "identity_mfa_recovery_codes_digest_uq": {
+          "name": "identity_mfa_recovery_codes_digest_uq",
+          "columns": [
+            {
+              "expression": "code_digest",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "identity_mfa_recovery_codes_factor_status_idx": {
+          "name": "identity_mfa_recovery_codes_factor_status_idx",
+          "columns": [
+            {
+              "expression": "factor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "consumed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "revoked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "identity_mfa_recovery_codes_factor_id_identity_mfa_factors_id_fk": {
+          "name": "identity_mfa_recovery_codes_factor_id_identity_mfa_factors_id_fk",
+          "tableFrom": "identity_mfa_recovery_codes",
+          "tableTo": "identity_mfa_factors",
+          "columnsFrom": [
+            "factor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "identity_mfa_recovery_codes_digest_not_blank_ck": {
+          "name": "identity_mfa_recovery_codes_digest_not_blank_ck",
+          "value": "\"identity_mfa_recovery_codes\".\"code_digest\" <> ''"
+        },
+        "identity_mfa_recovery_codes_single_terminal_state_ck": {
+          "name": "identity_mfa_recovery_codes_single_terminal_state_ck",
+          "value": "\"identity_mfa_recovery_codes\".\"consumed_at\" IS NULL OR \"identity_mfa_recovery_codes\".\"revoked_at\" IS NULL"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.identity_permission": {
+      "name": "identity_permission",
+      "schema": "public",
+      "values": [
+        "administrator"
+      ]
+    },
+    "public.identity_token_purpose": {
+      "name": "identity_token_purpose",
+      "schema": "public",
+      "values": [
+        "email_verification",
+        "password_reset"
+      ]
+    },
+    "public.identity_admin_audit_actor_type": {
+      "name": "identity_admin_audit_actor_type",
+      "schema": "public",
+      "values": [
+        "user",
+        "operator",
+        "system"
+      ]
+    },
+    "public.identity_admin_audit_event_type": {
+      "name": "identity_admin_audit_event_type",
+      "schema": "public",
+      "values": [
+        "administrator_granted",
+        "administrator_revoked",
+        "mfa_enrollment_authorized",
+        "mfa_enrollment_started",
+        "mfa_enrollment_confirmed",
+        "mfa_factor_revoked",
+        "mfa_elevation_succeeded",
+        "mfa_elevation_failed",
+        "mfa_recovery_requested",
+        "mfa_recovery_approved",
+        "mfa_recovery_completed",
+        "mfa_recovery_denied"
+      ]
+    },
+    "public.identity_admin_audit_outcome": {
+      "name": "identity_admin_audit_outcome",
+      "schema": "public",
+      "values": [
+        "success",
+        "denied",
+        "pending"
+      ]
+    },
+    "public.identity_mfa_attempt_action": {
+      "name": "identity_mfa_attempt_action",
+      "schema": "public",
+      "values": [
+        "enrollment",
+        "elevation",
+        "recovery"
+      ]
+    },
+    "public.identity_mfa_attempt_scope": {
+      "name": "identity_mfa_attempt_scope",
+      "schema": "public",
+      "values": [
+        "account",
+        "ip"
+      ]
+    },
+    "public.identity_mfa_factor_status": {
+      "name": "identity_mfa_factor_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "active",
+        "revoked"
+      ]
+    },
+    "public.identity_mfa_recovery_method": {
+      "name": "identity_mfa_recovery_method",
+      "schema": "public",
+      "values": [
+        "recovery_code",
+        "operator"
+      ]
+    },
+    "public.identity_mfa_recovery_status": {
+      "name": "identity_mfa_recovery_status",
+      "schema": "public",
+      "values": [
+        "requested",
+        "approved",
+        "completed",
+        "denied",
+        "cancelled"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
