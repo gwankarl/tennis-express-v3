@@ -43,6 +43,8 @@ export const identityMfaRecoveryStatus = pgEnum('identity_mfa_recovery_status', 
 export const identityAdminAuditEventType = pgEnum('identity_admin_audit_event_type', [
   'administrator_granted',
   'administrator_revoked',
+  'administrator_revocation_emergency',
+  'administrator_revocation_reviewed',
   'mfa_enrollment_authorized',
   'mfa_enrollment_started',
   'mfa_enrollment_confirmed',
@@ -65,6 +67,7 @@ export const identityAdminAuditOutcome = pgEnum('identity_admin_audit_outcome', 
   'success',
   'denied',
   'pending',
+  'no_op',
 ]);
 
 /**
@@ -292,11 +295,15 @@ export const identityAdminAuditEvents = pgTable(
     sessionId: uuid('session_id'),
     requestId: text('request_id'),
     reason: text('reason'),
+    operationId: uuid('operation_id'),
+    caseReference: text('case_reference'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('identity_admin_audit_events_target_time_idx').on(table.targetUserId, table.occurredAt),
     index('identity_admin_audit_events_type_time_idx').on(table.eventType, table.occurredAt),
+    index('identity_admin_audit_events_operation_idx').on(table.operationId),
+    index('identity_admin_audit_events_case_idx').on(table.caseReference),
     check(
       'identity_admin_audit_events_actor_shape_ck',
       sql`(
@@ -318,6 +325,47 @@ export const identityAdminAuditEvents = pgTable(
       sql`${table.approverOperatorId} IS NULL
         OR ${table.actorOperatorId} IS NULL
         OR ${table.approverOperatorId} <> ${table.actorOperatorId}`,
+    ),
+  ],
+);
+
+/**
+ * Durable idempotency record for operator-controlled administrator changes.
+ * User and operator identifiers intentionally have no foreign keys.
+ */
+export const identityAdminOperations = pgTable(
+  'identity_admin_operations',
+  {
+    operationId: uuid('operation_id').primaryKey(),
+    action: text('action').notNull(),
+    targetUserId: uuid('target_user_id').notNull(),
+    caseReference: text('case_reference').notNull(),
+    reason: text('reason').notNull(),
+    intentDigest: text('intent_digest').notNull(),
+    outcome: text('outcome').notNull(),
+    actorOperatorId: text('actor_operator_id').notNull(),
+    approverOperatorId: text('approver_operator_id'),
+    relatedOperationId: uuid('related_operation_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('identity_admin_operations_target_time_idx').on(table.targetUserId, table.createdAt),
+    index('identity_admin_operations_case_idx').on(table.caseReference),
+    check(
+      'identity_admin_operations_action_ck',
+      sql`${table.action} IN ('grant', 'revoke', 'emergency_revoke', 'review_emergency_revoke')`,
+    ),
+    check(
+      'identity_admin_operations_outcome_ck',
+      sql`${table.outcome} IN ('completed', 'rejected', 'no_op', 'reviewed')`,
+    ),
+    check(
+      'identity_admin_operations_reason_not_blank_ck',
+      sql`${table.reason} <> '' AND ${table.caseReference} <> '' AND ${table.intentDigest} <> ''`,
+    ),
+    check(
+      'identity_admin_operations_approvers_distinct_ck',
+      sql`${table.approverOperatorId} IS NULL OR ${table.actorOperatorId} <> ${table.approverOperatorId}`,
     ),
   ],
 );

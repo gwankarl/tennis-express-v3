@@ -50,6 +50,7 @@ const BACKEND_ENV_KEYS = [
   'SMTP_USER',
   'SMTP_PASS',
   'EMAIL_FROM',
+  'ADMIN_OPERATOR_KEYS_FILE',
 ] as const;
 
 const envSettingNames = new Set<string>(BACKEND_ENV_KEYS);

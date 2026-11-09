@@ -8,6 +8,7 @@
     "typecheck": "tsc --project tsconfig.json",
     "db:check": "tsx scripts/check-db.ts",
     "email:send-samples": "tsx scripts/send-email-samples.ts",
+    "admin:operate": "tsx scripts/admin-operations.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate:dev": "drizzle-kit migrate --config=drizzle.dev.config.ts",
     "db:migrate:test": "drizzle-kit migrate --config=drizzle.test.config.ts",
