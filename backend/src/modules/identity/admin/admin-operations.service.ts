@@ -1,9 +1,10 @@
 import { createHash, verify as verifySignature } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { generateSessionToken } from '../token.js';
+import { applyOperatorMfaRecovery } from './operator-mfa-recovery.js';
 
 export type AdminOperationAction =
-  'grant' | 'revoke' | 'emergency_revoke' | 'review_emergency_revoke';
+  'grant' | 'revoke' | 'emergency_revoke' | 'review_emergency_revoke' | 'operator_mfa_recovery';
 
 export interface AdminOperationIntent {
   environment: string;
@@ -31,6 +32,10 @@ export interface AdminOperationResult {
   status: 'completed' | 'rejected' | 'no_op' | 'reviewed' | 'replayed';
   enrollmentAuthorization?: string;
   enrollmentState?: 'authorization_issued' | 'already_pending' | 'already_active';
+  operatorRecoveryNotification?: {
+    recipient: string;
+    adminHoldUntil: Date;
+  };
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -52,7 +57,13 @@ export function canonicalizeAdminIntent(intent: AdminOperationIntent): string {
 function validateIntent(intent: AdminOperationIntent): void {
   if (
     !intent.environment.trim() ||
-    !['grant', 'revoke', 'emergency_revoke', 'review_emergency_revoke'].includes(intent.action) ||
+    ![
+      'grant',
+      'revoke',
+      'emergency_revoke',
+      'review_emergency_revoke',
+      'operator_mfa_recovery',
+    ].includes(intent.action) ||
     !uuidPattern.test(intent.operationId) ||
     !uuidPattern.test(intent.targetUserId) ||
     (intent.relatedOperationId !== null && !uuidPattern.test(intent.relatedOperationId)) ||
@@ -78,7 +89,12 @@ function verifyApprovals(
   approvals: AdminApproval[],
   operators: AdminOperator[],
 ): AdminOperator[] {
-  const requiredCount = intent.action === 'grant' || intent.action === 'revoke' ? 2 : 1;
+  const requiredCount =
+    intent.action === 'grant' ||
+    intent.action === 'revoke' ||
+    intent.action === 'operator_mfa_recovery'
+      ? 2
+      : 1;
   if (approvals.length !== requiredCount) {
     throw new Error('The number of operator approvals is invalid.');
   }
@@ -201,8 +217,12 @@ export async function executeAdminOperation(
       return { status: 'reviewed' };
     }
 
-    const targetResult = await client.query<{ status: string; email_verified_at: Date | null }>(
-      `SELECT status, email_verified_at
+    const targetResult = await client.query<{
+      status: string;
+      email_verified_at: Date | null;
+      delivery_email: string;
+    }>(
+      `SELECT status, email_verified_at, delivery_email
          FROM identity_users
         WHERE id = $1 AND normalized_email = $2
         FOR UPDATE`,
@@ -210,8 +230,10 @@ export async function executeAdminOperation(
     );
     const target = targetResult.rows[0];
 
+    const actionRequiresEligibleAccount =
+      intent.action === 'grant' || intent.action === 'operator_mfa_recovery';
     const grantTargetIsEligible =
-      intent.action !== 'grant' ||
+      !actionRequiresEligibleAccount ||
       (target?.status === 'active' && target.email_verified_at !== null);
     if (!target || !grantTargetIsEligible) {
       await insertOperation(
@@ -236,6 +258,7 @@ export async function executeAdminOperation(
     }
 
     let outcome: 'completed' | 'no_op' = 'completed';
+    let operatorRecoveryNotification: AdminOperationResult['operatorRecoveryNotification'];
     if (intent.action === 'grant') {
       const grant = await client.query(
         `INSERT INTO identity_user_permissions (user_id, permission)
@@ -295,6 +318,29 @@ export async function executeAdminOperation(
           enrollmentState = 'authorization_issued';
         }
       }
+    } else if (intent.action === 'operator_mfa_recovery') {
+      if (!target || !approver) {
+        throw new Error('Operator recovery approvals or target are missing.');
+      }
+
+      const recovery = await applyOperatorMfaRecovery({
+        client,
+        userId: intent.targetUserId,
+        deliveryEmail: target.delivery_email,
+        actorOperatorId: actor.id,
+        approverOperatorId: approver.id,
+        operationId: intent.operationId,
+        caseReference: intent.caseReference,
+        reason: intent.reason,
+        now,
+      });
+
+      rawEnrollmentAuthorization = recovery.enrollmentAuthorization;
+      enrollmentState = 'authorization_issued';
+      operatorRecoveryNotification = {
+        recipient: recovery.notificationRecipient,
+        adminHoldUntil: recovery.adminHoldUntil,
+      };
     } else {
       const revoked = await client.query(
         `DELETE FROM identity_user_permissions
@@ -347,6 +393,7 @@ export async function executeAdminOperation(
         ? { enrollmentAuthorization: rawEnrollmentAuthorization }
         : {}),
       ...(enrollmentState ? { enrollmentState } : {}),
+      ...(operatorRecoveryNotification ? { operatorRecoveryNotification } : {}),
     };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
@@ -422,5 +469,7 @@ function eventFor(action: AdminOperationAction): string {
       return 'administrator_revocation_emergency';
     case 'review_emergency_revoke':
       return 'administrator_revocation_reviewed';
+    case 'operator_mfa_recovery':
+      return 'mfa_recovery_completed';
   }
 }

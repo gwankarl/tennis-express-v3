@@ -77,6 +77,7 @@ async function startServer(): Promise<void> {
       database,
       emailSender,
       frontendOrigin: config.email.frontendOrigin,
+      adminMfa: config.adminMfa,
     });
 
     database.pool.on('error', (error) => {

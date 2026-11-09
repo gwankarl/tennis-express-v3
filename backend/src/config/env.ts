@@ -17,11 +17,21 @@ export interface BackendEmailConfig {
   smtp?: SmtpConfig;
 }
 
+export interface AdminMfaConfig {
+  /** Base64 encoding of a 32-byte AES-256 key. Keep it outside PostgreSQL. */
+  encryptionKey: string;
+  /** Identifies the encryption key used for each factor's ciphertext. */
+  keyVersion: string;
+  /** Base64 encoding of a separate 32-byte HMAC key for attempt-counter subjects. */
+  attemptHmacKey: string;
+}
+
 export interface BackendConfig {
   host: string;
   port: number;
   databaseUrl: string;
   email: BackendEmailConfig;
+  adminMfa?: AdminMfaConfig;
 }
 
 export type EnvSetting =
@@ -34,7 +44,10 @@ export type EnvSetting =
   | 'SMTP_PORT'
   | 'SMTP_USER'
   | 'SMTP_PASS'
-  | 'EMAIL_FROM';
+  | 'EMAIL_FROM'
+  | 'ADMIN_MFA_ENCRYPTION_KEY'
+  | 'ADMIN_MFA_KEY_VERSION'
+  | 'ADMIN_MFA_ATTEMPT_HMAC_KEY';
 
 const DEFAULT_FRONTEND_ORIGIN = 'http://127.0.0.1:5173';
 
@@ -51,6 +64,9 @@ const BACKEND_ENV_KEYS = [
   'SMTP_PASS',
   'EMAIL_FROM',
   'ADMIN_OPERATOR_KEYS_FILE',
+  'ADMIN_MFA_ENCRYPTION_KEY',
+  'ADMIN_MFA_KEY_VERSION',
+  'ADMIN_MFA_ATTEMPT_HMAC_KEY',
 ] as const;
 
 const envSettingNames = new Set<string>(BACKEND_ENV_KEYS);
@@ -101,6 +117,12 @@ const smtpSettingsSchema = z.object({
     .regex(/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/u),
 });
 
+const adminMfaSettingsSchema = z.object({
+  ADMIN_MFA_ENCRYPTION_KEY: z.string().refine(isBase64Encoded32ByteKey),
+  ADMIN_MFA_KEY_VERSION: z.string().trim().min(1),
+  ADMIN_MFA_ATTEMPT_HMAC_KEY: z.string().refine(isBase64Encoded32ByteKey),
+});
+
 export class EnvValidationError extends Error {
   constructor(
     readonly setting: EnvSetting,
@@ -133,6 +155,7 @@ export function loadBackendEnv(): void {
 
 export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
   const base = parseSettings(baseSettingsSchema, env);
+  const adminMfa = parseAdminMfaSettings(env);
 
   if (!base.EMAIL_ENABLED) {
     return {
@@ -143,6 +166,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
         enabled: false,
         frontendOrigin: DEFAULT_FRONTEND_ORIGIN,
       },
+      ...(adminMfa ? { adminMfa } : {}),
     };
   }
 
@@ -163,7 +187,38 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
         from: smtp.EMAIL_FROM,
       },
     },
+    ...(adminMfa ? { adminMfa } : {}),
   };
+}
+
+function parseAdminMfaSettings(env: NodeJS.ProcessEnv): AdminMfaConfig | undefined {
+  const settingNames = [
+    'ADMIN_MFA_ENCRYPTION_KEY',
+    'ADMIN_MFA_KEY_VERSION',
+    'ADMIN_MFA_ATTEMPT_HMAC_KEY',
+  ] as const;
+
+  if (settingNames.every((setting) => env[setting] === undefined)) {
+    return undefined;
+  }
+
+  const settings = parseSettings(adminMfaSettingsSchema, env);
+
+  return {
+    encryptionKey: settings.ADMIN_MFA_ENCRYPTION_KEY,
+    keyVersion: settings.ADMIN_MFA_KEY_VERSION,
+    attemptHmacKey: settings.ADMIN_MFA_ATTEMPT_HMAC_KEY,
+  };
+}
+
+function isBase64Encoded32ByteKey(value: string): boolean {
+  if (!/^[A-Za-z0-9+/]{43}=$/u.test(value)) {
+    return false;
+  }
+
+  const decoded = Buffer.from(value, 'base64');
+
+  return decoded.length === 32 && decoded.toString('base64') === value;
 }
 
 function parseSettings<T extends z.ZodType>(schema: T, value: unknown): z.output<T> {
@@ -201,6 +256,11 @@ function getValidationMessage(setting: EnvSetting): string {
       return 'is required and must not be blank when EMAIL_ENABLED is true';
     case 'EMAIL_FROM':
       return 'must be a valid sender email address';
+    case 'ADMIN_MFA_ENCRYPTION_KEY':
+    case 'ADMIN_MFA_ATTEMPT_HMAC_KEY':
+      return 'must be a base64-encoded 32-byte key';
+    case 'ADMIN_MFA_KEY_VERSION':
+      return 'must not be blank';
   }
 }
 

@@ -17,12 +17,16 @@ import { registerSessionAuthRoutes } from './modules/identity/sessions/auth.rout
 import { registerPasswordRecoveryRoutes } from './modules/identity/passwords/password-recovery.routes.js';
 import { registerPasswordChangeRoutes } from './modules/identity/passwords/password-change.routes.js';
 import { registerAuthenticationContext } from './http/guards/authenticate.js';
+import type { AdminMfaConfig } from './config/env.js';
+import { registerAdminMfaRoutes } from './modules/identity/admin/admin-mfa.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     db: DatabaseClient['db'] | null;
     emailSender: EmailSender | null;
     frontendOrigin: string;
+    mfaPool: DatabaseClient['pool'] | null;
+    adminMfaConfig: import('./config/env.js').AdminMfaConfig | null;
   }
 }
 
@@ -31,6 +35,7 @@ export interface AppOptions {
   emailSender?: EmailSender;
   frontendOrigin?: string;
   workspaceAuthorizationSources?: WorkspaceAuthorizationSources;
+  adminMfa?: AdminMfaConfig;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -43,6 +48,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   registerAuthenticationContext(app);
 
   app.decorate('db', options.database?.db ?? null);
+  app.decorate('mfaPool', options.database?.pool ?? null);
+  app.decorate('adminMfaConfig', options.adminMfa ?? null);
   app.decorate('emailSender', options.emailSender ?? null);
   app.decorate('frontendOrigin', options.frontendOrigin ?? 'http://127.0.0.1:5173');
 
@@ -96,6 +103,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerPasswordChangeRoutes(app);
     registerUserProfileRoutes(app);
     registerWorkspacesRoutes(app, options.workspaceAuthorizationSources);
+    registerAdminMfaRoutes(app);
   });
 
   return app;

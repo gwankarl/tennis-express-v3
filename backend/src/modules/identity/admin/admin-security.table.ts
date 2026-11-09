@@ -12,6 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { identityUsers } from '../accounts/user.table.js';
+import { identitySessions } from '../sessions/session.table.js';
 
 export const identityMfaFactorStatus = pgEnum('identity_mfa_factor_status', [
   'pending',
@@ -81,6 +82,9 @@ export const identityMfaFactors = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => identityUsers.id, { onDelete: 'cascade' }),
+    pendingSessionId: uuid('pending_session_id').references(() => identitySessions.id, {
+      onDelete: 'cascade',
+    }),
     factorType: text('factor_type').notNull().default('totp'),
     status: identityMfaFactorStatus('status').notNull(),
     secretCiphertext: text('secret_ciphertext').notNull(),
@@ -107,87 +111,24 @@ export const identityMfaFactors = pgTable(
       sql`(
         (${table.status} = 'pending'
           AND ${table.pendingExpiresAt} IS NOT NULL
+          AND ${table.pendingSessionId} IS NOT NULL
           AND ${table.confirmedAt} IS NULL
           AND ${table.revokedAt} IS NULL)
         OR
         (${table.status} = 'active'
           AND ${table.pendingExpiresAt} IS NULL
+          AND ${table.pendingSessionId} IS NULL
           AND ${table.confirmedAt} IS NOT NULL
           AND ${table.revokedAt} IS NULL)
         OR
-        (${table.status} = 'revoked' AND ${table.revokedAt} IS NOT NULL)
+        (${table.status} = 'revoked'
+          AND ${table.pendingSessionId} IS NULL
+          AND ${table.revokedAt} IS NOT NULL)
       )`,
     ),
     check(
       'identity_mfa_factors_last_step_nonnegative_ck',
       sql`${table.lastAcceptedTimeStep} IS NULL OR ${table.lastAcceptedTimeStep} >= 0`,
-    ),
-  ],
-);
-
-/**
- * Stores only a digest for the operator-issued, target-specific, single-use
- * authorization to begin the first TOTP enrollment.
- */
-export const identityAdminEnrollmentAuthorizations = pgTable(
-  'identity_admin_enrollment_authorizations',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    targetUserId: uuid('target_user_id')
-      .notNull()
-      .references(() => identityUsers.id, { onDelete: 'cascade' }),
-    authorizationDigest: text('authorization_digest').notNull(),
-    issuedByOperatorId: text('issued_by_operator_id').notNull(),
-    approvedByOperatorId: text('approved_by_operator_id').notNull(),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    consumedAt: timestamp('consumed_at', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('identity_admin_enrollment_authorizations_digest_uq').on(table.authorizationDigest),
-    index('identity_admin_enrollment_authorizations_target_expiry_idx').on(
-      table.targetUserId,
-      table.expiresAt,
-    ),
-    check(
-      'identity_admin_enrollment_authorizations_digest_not_blank_ck',
-      sql`${table.authorizationDigest} <> ''`,
-    ),
-    check(
-      'identity_admin_enrollment_authorizations_operators_distinct_ck',
-      sql`${table.issuedByOperatorId} <> ${table.approvedByOperatorId}`,
-    ),
-    check(
-      'identity_admin_enrollment_authorizations_expiry_ck',
-      sql`${table.expiresAt} > ${table.issuedAt}`,
-    ),
-  ],
-);
-
-/** Stores only one-way digests of single-use recovery codes. */
-export const identityMfaRecoveryCodes = pgTable(
-  'identity_mfa_recovery_codes',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    factorId: uuid('factor_id')
-      .notNull()
-      .references(() => identityMfaFactors.id, { onDelete: 'cascade' }),
-    codeDigest: text('code_digest').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    consumedAt: timestamp('consumed_at', { withTimezone: true }),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('identity_mfa_recovery_codes_digest_uq').on(table.codeDigest),
-    index('identity_mfa_recovery_codes_factor_status_idx').on(
-      table.factorId,
-      table.consumedAt,
-      table.revokedAt,
-    ),
-    check('identity_mfa_recovery_codes_digest_not_blank_ck', sql`${table.codeDigest} <> ''`),
-    check(
-      'identity_mfa_recovery_codes_single_terminal_state_ck',
-      sql`${table.consumedAt} IS NULL OR ${table.revokedAt} IS NULL`,
     ),
   ],
 );
@@ -247,6 +188,86 @@ export const identityMfaRecoveries = pgTable(
     check(
       'identity_mfa_recoveries_completed_state_ck',
       sql`${table.status} <> 'completed' OR ${table.completedAt} IS NOT NULL`,
+    ),
+  ],
+);
+
+/**
+ * Stores only a digest for the operator-issued, target-specific, single-use
+ * authorization to begin the first TOTP enrollment.
+ */
+export const identityAdminEnrollmentAuthorizations = pgTable(
+  'identity_admin_enrollment_authorizations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    targetUserId: uuid('target_user_id')
+      .notNull()
+      .references(() => identityUsers.id, { onDelete: 'cascade' }),
+    recoveryId: uuid('recovery_id').references(() => identityMfaRecoveries.id, {
+      onDelete: 'cascade',
+    }),
+    authorizationDigest: text('authorization_digest').notNull(),
+    issuedByOperatorId: text('issued_by_operator_id'),
+    approvedByOperatorId: text('approved_by_operator_id'),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('identity_admin_enrollment_authorizations_digest_uq').on(table.authorizationDigest),
+    uniqueIndex('identity_admin_enrollment_authorizations_recovery_uq').on(table.recoveryId),
+    index('identity_admin_enrollment_authorizations_target_expiry_idx').on(
+      table.targetUserId,
+      table.expiresAt,
+    ),
+    check(
+      'identity_admin_enrollment_authorizations_digest_not_blank_ck',
+      sql`${table.authorizationDigest} <> ''`,
+    ),
+    check(
+      'identity_admin_enrollment_authorizations_issuer_shape_ck',
+      sql`(
+        (${table.recoveryId} IS NULL
+          AND ${table.issuedByOperatorId} IS NOT NULL
+          AND ${table.approvedByOperatorId} IS NOT NULL
+          AND ${table.issuedByOperatorId} <> ${table.approvedByOperatorId})
+        OR
+        (${table.recoveryId} IS NOT NULL
+          AND ${table.issuedByOperatorId} IS NULL
+          AND ${table.approvedByOperatorId} IS NULL)
+      )`,
+    ),
+    check(
+      'identity_admin_enrollment_authorizations_expiry_ck',
+      sql`${table.expiresAt} > ${table.issuedAt}`,
+    ),
+  ],
+);
+
+/** Stores only one-way digests of single-use recovery codes. */
+export const identityMfaRecoveryCodes = pgTable(
+  'identity_mfa_recovery_codes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    factorId: uuid('factor_id')
+      .notNull()
+      .references(() => identityMfaFactors.id, { onDelete: 'cascade' }),
+    codeDigest: text('code_digest').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('identity_mfa_recovery_codes_digest_uq').on(table.codeDigest),
+    index('identity_mfa_recovery_codes_factor_status_idx').on(
+      table.factorId,
+      table.consumedAt,
+      table.revokedAt,
+    ),
+    check('identity_mfa_recovery_codes_digest_not_blank_ck', sql`${table.codeDigest} <> ''`),
+    check(
+      'identity_mfa_recovery_codes_single_terminal_state_ck',
+      sql`${table.consumedAt} IS NULL OR ${table.revokedAt} IS NULL`,
     ),
   ],
 );
@@ -353,7 +374,7 @@ export const identityAdminOperations = pgTable(
     index('identity_admin_operations_case_idx').on(table.caseReference),
     check(
       'identity_admin_operations_action_ck',
-      sql`${table.action} IN ('grant', 'revoke', 'emergency_revoke', 'review_emergency_revoke')`,
+      sql`${table.action} IN ('grant', 'revoke', 'emergency_revoke', 'review_emergency_revoke', 'operator_mfa_recovery')`,
     ),
     check(
       'identity_admin_operations_outcome_ck',

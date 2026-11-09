@@ -12,6 +12,8 @@ import {
 } from '../src/modules/identity/admin/admin-operations.service.js';
 import { parseEnv, loadBackendEnv } from '../src/config/env.js';
 import { createDatabaseClient } from '../src/infrastructure/database/client.js';
+import { createSmtpEmailSender } from '../src/infrastructure/email/smtp-email-sender.js';
+import { createAdminMfaRecoveryEmail } from '../src/modules/identity/admin/mfa-recovery-email.js';
 
 interface OperatorRegistry {
   operators: AdminOperator[];
@@ -61,6 +63,23 @@ async function run(): Promise<void> {
     return;
   }
   const config = parseEnv(process.env);
+  const isOperatorMfaRecovery = intent.action === 'operator_mfa_recovery';
+
+  if (
+    isOperatorMfaRecovery &&
+    (!config.adminMfa || !config.email.enabled || !config.email.smtp)
+  ) {
+    throw new Error('Operator MFA recovery requires MFA keys and configured SMTP delivery.');
+  }
+
+  if ((intent.action === 'grant' || isOperatorMfaRecovery) && !stdout.isTTY) {
+    throw new Error('This operation must run in an interactive terminal.');
+  }
+
+  const recoveryEmailSender =
+    isOperatorMfaRecovery && config.email.smtp
+      ? createSmtpEmailSender(config.email.smtp)
+      : undefined;
   if (!approvalsPath) throw new Error('An approvals file is required.');
 
   const registryPath = process.env.ADMIN_OPERATOR_KEYS_FILE?.trim();
@@ -104,6 +123,23 @@ async function run(): Promise<void> {
       approvalFile.approvals,
       registry.operators,
     );
+
+    if (result.operatorRecoveryNotification && recoveryEmailSender) {
+      try {
+        await recoveryEmailSender.send(
+          createAdminMfaRecoveryEmail({
+            to: result.operatorRecoveryNotification.recipient,
+            frontendOrigin: config.email.frontendOrigin,
+            adminHoldUntil: result.operatorRecoveryNotification.adminHoldUntil,
+          }),
+        );
+      } catch {
+        stdout.write(
+          'MFA recovery committed, but notification delivery failed. Follow the independently verified manual notification procedure.\n',
+        );
+      }
+    }
+
     stdout.write(`Operation result: ${result.status}\n`);
     if (result.enrollmentState) stdout.write(`MFA enrollment state: ${result.enrollmentState}\n`);
     if (result.enrollmentAuthorization) {
