@@ -20,6 +20,7 @@ export const identitySessions = pgTable(
   },
   (table) => [
     uniqueIndex('identity_sessions_token_digest_uq').on(table.tokenDigest),
+    uniqueIndex('identity_sessions_id_user_id_uq').on(table.id, table.userId),
     index('identity_sessions_user_revoked_idx').on(table.userId, table.revokedAt),
     index('identity_sessions_idle_expires_idx').on(table.idleExpiresAt),
     index('identity_sessions_absolute_expires_idx').on(table.absoluteExpiresAt),

@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 
 const ATTEMPT_LIMIT = 5;
 
-export type MfaAttemptAction = 'enrollment' | 'recovery';
+export type MfaAttemptAction = 'enrollment' | 'elevation' | 'recovery';
 type MfaAttemptScope = 'account' | 'ip';
 
 export interface ConsumeMfaAttemptInput {

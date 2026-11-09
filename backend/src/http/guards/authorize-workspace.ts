@@ -1,8 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiErrorResponse } from '../contract.js';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { identityUserPermissions } from '../../modules/identity/accounts/permission.table.js';
+import { identityMfaRecoveries } from '../../modules/identity/admin/admin-security.table.js';
+import { identitySessions } from '../../modules/identity/sessions/session.table.js';
 import { requireAuthentication } from './authenticate.js';
 
 export type WorkspaceName = 'buyer' | 'seller' | 'admin';
@@ -81,8 +83,43 @@ async function getAdminEntryState(
     return 'unavailable';
   }
 
-  // A grant without session-specific MFA elevation never grants Admin access.
-  const mfaElevated = (await sources.isSessionMfaElevated?.(sessionId)) ?? false;
+  const activeRecoveryHolds = await db
+    .select({ id: identityMfaRecoveries.id })
+    .from(identityMfaRecoveries)
+    .where(
+      and(
+        eq(identityMfaRecoveries.userId, userId),
+        eq(identityMfaRecoveries.status, 'completed'),
+        gt(identityMfaRecoveries.adminHoldUntil, sql`clock_timestamp()`),
+      ),
+    )
+    .limit(1);
+
+  if (activeRecoveryHolds.length > 0) {
+    return 'mfa_required';
+  }
+
+  const mfaElevated = sources.isSessionMfaElevated
+    ? await sources.isSessionMfaElevated(sessionId)
+    : (
+        await db
+          .select({ sessionId: identitySessions.id })
+          .from(identitySessions)
+          .where(
+            and(
+              eq(identitySessions.id, sessionId),
+              eq(identitySessions.userId, userId),
+              isNull(identitySessions.revokedAt),
+              isNotNull(identitySessions.adminMfaElevatedAt),
+              lte(identitySessions.adminMfaElevatedAt, sql`clock_timestamp()`),
+              gt(identitySessions.adminMfaElevatedUntil, sql`clock_timestamp()`),
+              gt(identitySessions.idleExpiresAt, sql`clock_timestamp()`),
+              gt(identitySessions.absoluteExpiresAt, sql`clock_timestamp()`),
+            ),
+          )
+          .limit(1)
+      ).length === 1;
+
   return mfaElevated ? 'available' : 'mfa_required';
 }
 

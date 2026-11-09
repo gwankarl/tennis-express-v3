@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   pgEnum,
@@ -387,6 +388,51 @@ export const identityAdminOperations = pgTable(
     check(
       'identity_admin_operations_approvers_distinct_ck',
       sql`${table.approverOperatorId} IS NULL OR ${table.actorOperatorId} <> ${table.approverOperatorId}`,
+    ),
+  ],
+);
+
+/**
+ * Stores only a digest for a short-lived administrator elevation challenge.
+ * The composite foreign key binds the challenge to the specified user's session.
+ */
+export const identityAdminMfaElevationChallenges = pgTable(
+  'identity_admin_mfa_elevation_challenges',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    sessionId: uuid('session_id').notNull(),
+    challengeDigest: text('challenge_digest').notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'identity_admin_mfa_elevation_challenges_session_user_fk',
+      columns: [table.sessionId, table.userId],
+      foreignColumns: [identitySessions.id, identitySessions.userId],
+    }).onDelete('cascade'),
+    uniqueIndex('identity_admin_mfa_elevation_challenges_digest_uq').on(table.challengeDigest),
+    index('identity_admin_mfa_elevation_challenges_session_expiry_idx').on(
+      table.sessionId,
+      table.expiresAt,
+    ),
+    index('identity_admin_mfa_elevation_challenges_user_expiry_idx').on(
+      table.userId,
+      table.expiresAt,
+    ),
+    check(
+      'identity_admin_mfa_elevation_challenges_digest_not_blank_ck',
+      sql`${table.challengeDigest} <> ''`,
+    ),
+    check(
+      'identity_admin_mfa_elevation_challenges_expiry_ck',
+      sql`${table.expiresAt} > ${table.issuedAt}`,
+    ),
+    check(
+      'identity_admin_mfa_elevation_challenges_consumed_ck',
+      sql`${table.consumedAt} IS NULL OR ${table.consumedAt} >= ${table.issuedAt}`,
     ),
   ],
 );

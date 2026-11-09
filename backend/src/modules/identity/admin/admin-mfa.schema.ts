@@ -30,6 +30,27 @@ export interface RecoverAdminMfaData {
   replacementEnrollmentAuthorization: string;
 }
 
+export interface StartAdminMfaElevationBody {
+  password: string;
+}
+
+export interface ConfirmAdminMfaElevationBody {
+  challenge: string;
+  code: string;
+}
+
+export interface StartAdminMfaElevationData {
+  challenge: string;
+  expiresAt: string;
+}
+
+export interface ConfirmAdminMfaElevationData {
+  sessionToken: string;
+  tokenType: 'Bearer';
+  expiresAt: string;
+  elevatedUntil: string;
+}
+
 const oneTimeTokenPattern = '^[A-Za-z0-9_-]{43}$';
 
 export const startAdminMfaEnrollmentRequestSchema = {
@@ -135,6 +156,76 @@ export const recoverAdminMfaResponseSchema = {
           maxLength: 43,
           pattern: oneTimeTokenPattern,
         },
+      },
+    },
+  },
+} as const;
+
+export const startAdminMfaElevationRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['password'],
+  properties: {
+    password: { type: 'string', minLength: 1, maxLength: 1024 },
+  },
+} as const;
+
+export const startAdminMfaElevationResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['challenge', 'expiresAt'],
+      properties: {
+        challenge: {
+          type: 'string',
+          minLength: 43,
+          maxLength: 43,
+          pattern: oneTimeTokenPattern,
+        },
+        expiresAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  },
+} as const;
+
+export const confirmAdminMfaElevationRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['challenge', 'code'],
+  properties: {
+    challenge: {
+      type: 'string',
+      minLength: 43,
+      maxLength: 43,
+      pattern: oneTimeTokenPattern,
+    },
+    code: { type: 'string', pattern: '^\\d{6}$' },
+  },
+} as const;
+
+export const confirmAdminMfaElevationResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['sessionToken', 'tokenType', 'expiresAt', 'elevatedUntil'],
+      properties: {
+        sessionToken: {
+          type: 'string',
+          minLength: 43,
+          maxLength: 43,
+          pattern: oneTimeTokenPattern,
+        },
+        tokenType: { type: 'string', const: 'Bearer' },
+        expiresAt: { type: 'string', format: 'date-time' },
+        elevatedUntil: { type: 'string', format: 'date-time' },
       },
     },
   },
