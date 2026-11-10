@@ -19,6 +19,7 @@ import { registerPasswordChangeRoutes } from './modules/identity/passwords/passw
 import { registerAuthenticationContext } from './http/guards/authenticate.js';
 import type { AdminMfaConfig } from './config/env.js';
 import { registerAdminMfaRoutes } from './modules/identity/admin/admin-mfa.routes.js';
+import { registerSellerApplicationRoutes } from './modules/seller-onboarding/application.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -103,6 +104,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerPasswordChangeRoutes(app);
     registerUserProfileRoutes(app);
     registerWorkspacesRoutes(app, options.workspaceAuthorizationSources);
+    registerSellerApplicationRoutes(app);
     registerAdminMfaRoutes(app);
   });
 

@@ -43,6 +43,13 @@
       "when": 1794213604149,
       "tag": "0005_petite_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794312464033,
+      "tag": "0006_hesitant_nova",
+      "breakpoints": true
     }
   ]
 }
