@@ -3,6 +3,7 @@ import { type BackendConfig, EnvValidationError, loadBackendEnv, parseEnv } from
 import type { FastifyInstance } from 'fastify';
 import { createDatabaseClient, type DatabaseClient } from './infrastructure/database/client.js';
 import { createSmtpEmailSender } from './infrastructure/email/smtp-email-sender.js';
+import { PrivateEvidenceFileStore } from './infrastructure/storage/private-evidence-file-store.js';
 
 function registerShutdownHandlers(app: FastifyInstance): void {
   let shuttingDown = false;
@@ -73,11 +74,16 @@ async function startServer(): Promise<void> {
         ? createSmtpEmailSender(config.email.smtp)
         : undefined;
 
+    const evidenceFileStore = new PrivateEvidenceFileStore(config.sellerEvidenceStorageDirectory);
+    await evidenceFileStore.initialize();
+    await evidenceFileStore.cleanupAbandonedStaging();
+
     app = buildApp({
       database,
       emailSender,
       frontendOrigin: config.email.frontendOrigin,
       adminMfa: config.adminMfa,
+      evidenceFileStore,
     });
 
     database.pool.on('error', (error) => {

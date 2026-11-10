@@ -50,6 +50,13 @@
       "when": 1794312464033,
       "tag": "0006_hesitant_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794314147583,
+      "tag": "0007_lazy_sasquatch",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { loadEnvFile } from 'node:process';
 import { z } from 'zod';
 
@@ -30,6 +30,7 @@ export interface BackendConfig {
   host: string;
   port: number;
   databaseUrl: string;
+  sellerEvidenceStorageDirectory: string;
   email: BackendEmailConfig;
   adminMfa?: AdminMfaConfig;
 }
@@ -45,11 +46,14 @@ export type EnvSetting =
   | 'SMTP_USER'
   | 'SMTP_PASS'
   | 'EMAIL_FROM'
+  | 'SELLER_EVIDENCE_STORAGE_DIR'
   | 'ADMIN_MFA_ENCRYPTION_KEY'
   | 'ADMIN_MFA_KEY_VERSION'
   | 'ADMIN_MFA_ATTEMPT_HMAC_KEY';
 
 const DEFAULT_FRONTEND_ORIGIN = 'http://127.0.0.1:5173';
+
+const DEFAULT_SELLER_EVIDENCE_STORAGE_DIRECTORY = 'C:/tx-private/tennis-xpress/evidence';
 
 const BACKEND_ENV_KEYS = [
   'HOST',
@@ -67,6 +71,7 @@ const BACKEND_ENV_KEYS = [
   'ADMIN_MFA_ENCRYPTION_KEY',
   'ADMIN_MFA_KEY_VERSION',
   'ADMIN_MFA_ATTEMPT_HMAC_KEY',
+  'SELLER_EVIDENCE_STORAGE_DIR',
 ] as const;
 
 const envSettingNames = new Set<string>(BACKEND_ENV_KEYS);
@@ -80,6 +85,12 @@ const baseSettingsSchema = z.object({
   HOST: z.string().trim().min(1).default('127.0.0.1'),
   PORT: portSchema,
   DATABASE_URL: z.string().trim().min(1).refine(isValidDatabaseUrl),
+  SELLER_EVIDENCE_STORAGE_DIR: z
+    .preprocess(
+      (value: unknown) => (value === undefined ? DEFAULT_SELLER_EVIDENCE_STORAGE_DIRECTORY : value),
+      z.string().trim().min(1),
+    )
+    .refine(isAbsolute),
   EMAIL_ENABLED: z.preprocess(
     (value: unknown) => (value === undefined ? 'false' : value),
     z
@@ -162,6 +173,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
       host: base.HOST,
       port: base.PORT,
       databaseUrl: base.DATABASE_URL,
+      sellerEvidenceStorageDirectory: base.SELLER_EVIDENCE_STORAGE_DIR,
       email: {
         enabled: false,
         frontendOrigin: DEFAULT_FRONTEND_ORIGIN,
@@ -176,6 +188,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
     host: base.HOST,
     port: base.PORT,
     databaseUrl: base.DATABASE_URL,
+    sellerEvidenceStorageDirectory: base.SELLER_EVIDENCE_STORAGE_DIR,
     email: {
       enabled: true,
       frontendOrigin: smtp.FRONTEND_ORIGIN,
@@ -261,6 +274,8 @@ function getValidationMessage(setting: EnvSetting): string {
       return 'must be a base64-encoded 32-byte key';
     case 'ADMIN_MFA_KEY_VERSION':
       return 'must not be blank';
+    case 'SELLER_EVIDENCE_STORAGE_DIR':
+      return 'must be an absolute path to a private evidence directory';
   }
 }
 

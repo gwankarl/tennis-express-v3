@@ -20,6 +20,13 @@ import { registerAuthenticationContext } from './http/guards/authenticate.js';
 import type { AdminMfaConfig } from './config/env.js';
 import { registerAdminMfaRoutes } from './modules/identity/admin/admin-mfa.routes.js';
 import { registerSellerApplicationRoutes } from './modules/seller-onboarding/application.routes.js';
+import fastifyMultipart from '@fastify/multipart';
+import {
+  PrivateEvidenceFileStore,
+  MAX_EVIDENCE_FILE_BYTES,
+} from './infrastructure/storage/private-evidence-file-store.js';
+import { registerSellerApplicationEvidenceRoutes } from './modules/seller-onboarding/application-evidence.routes.js';
+import { registerSellerApplicationEvidenceReadRoutes } from './modules/seller-onboarding/application-evidence-read.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -28,6 +35,7 @@ declare module 'fastify' {
     frontendOrigin: string;
     mfaPool: DatabaseClient['pool'] | null;
     adminMfaConfig: import('./config/env.js').AdminMfaConfig | null;
+    evidenceFileStore: PrivateEvidenceFileStore | null;
   }
 }
 
@@ -37,6 +45,7 @@ export interface AppOptions {
   frontendOrigin?: string;
   workspaceAuthorizationSources?: WorkspaceAuthorizationSources;
   adminMfa?: AdminMfaConfig;
+  evidenceFileStore?: PrivateEvidenceFileStore;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -48,11 +57,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   registerAuthenticationContext(app);
 
+  app.register(fastifyMultipart, {
+    limits: {
+      files: 1,
+      fields: 0,
+      fileSize: MAX_EVIDENCE_FILE_BYTES,
+    },
+  });
+
   app.decorate('db', options.database?.db ?? null);
   app.decorate('mfaPool', options.database?.pool ?? null);
   app.decorate('adminMfaConfig', options.adminMfa ?? null);
   app.decorate('emailSender', options.emailSender ?? null);
   app.decorate('frontendOrigin', options.frontendOrigin ?? 'http://127.0.0.1:5173');
+  app.decorate('evidenceFileStore', options.evidenceFileStore ?? null);
 
   if (options.database) {
     app.addHook('onClose', async () => {
@@ -105,6 +123,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerUserProfileRoutes(app);
     registerWorkspacesRoutes(app, options.workspaceAuthorizationSources);
     registerSellerApplicationRoutes(app);
+    registerSellerApplicationEvidenceRoutes(app);
+    registerSellerApplicationEvidenceReadRoutes(app);
     registerAdminMfaRoutes(app);
   });
 
