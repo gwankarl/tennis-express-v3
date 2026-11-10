@@ -51,6 +51,7 @@ function workspaces(seller: boolean) {
     availableWorkspaces: { buyer: true, seller },
     sellerApplicationStatus: seller ? 'approved' : 'pending',
     adminEntryState: 'unavailable',
+    adminMfaFactorState: null,
   };
 }
 

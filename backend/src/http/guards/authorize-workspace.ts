@@ -1,9 +1,12 @@
-import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiErrorResponse } from '../contract.js';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { identityUserPermissions } from '../../modules/identity/accounts/permission.table.js';
-import { identityMfaRecoveries } from '../../modules/identity/admin/admin-security.table.js';
+import {
+  identityMfaFactors,
+  identityMfaRecoveries,
+} from '../../modules/identity/admin/admin-security.table.js';
 import { identitySessions } from '../../modules/identity/sessions/session.table.js';
 import { requireAuthentication } from './authenticate.js';
 
@@ -14,6 +17,8 @@ export type SellerApplicationStatus = 'not_applied' | 'pending' | 'approved' | '
 export type SellerOperatingAccess = 'inactive' | 'active' | 'suspended';
 
 export type AdminEntryState = 'unavailable' | 'mfa_required' | 'available';
+
+export type AdminMfaFactorState = 'none' | 'pending' | 'active' | null;
 
 /**
  * Seller onboarding must eventually provide application status and operating
@@ -36,6 +41,7 @@ export interface WorkspaceAvailabilityDecision {
   sellerAvailable: boolean;
   sellerApplicationStatus: SellerApplicationStatus | null;
   adminEntryState: AdminEntryState;
+  adminMfaFactorState: AdminMfaFactorState;
 }
 
 function sendWorkspaceError(request: FastifyRequest, reply: FastifyReply, status: 401 | 403): void {
@@ -62,12 +68,17 @@ async function getSellerDecision(
   };
 }
 
-async function getAdminEntryState(
+interface AdminEntryDecision {
+  entryState: AdminEntryState;
+  factorState: AdminMfaFactorState;
+}
+
+async function getAdminEntryDecision(
   db: DatabaseClient['db'],
   userId: string,
   sessionId: string,
   sources: WorkspaceAuthorizationSources,
-): Promise<AdminEntryState> {
+): Promise<AdminEntryDecision> {
   const grants = await db
     .select({ userId: identityUserPermissions.userId })
     .from(identityUserPermissions)
@@ -80,8 +91,27 @@ async function getAdminEntryState(
     .limit(1);
 
   if (grants.length === 0) {
-    return 'unavailable';
+    return { entryState: 'unavailable', factorState: null };
   }
+
+  const factors = await db
+    .select({ status: identityMfaFactors.status })
+    .from(identityMfaFactors)
+    .where(
+      and(
+        eq(identityMfaFactors.userId, userId),
+        inArray(identityMfaFactors.status, ['pending', 'active']),
+      ),
+    )
+    .limit(1);
+
+  const storedFactorStatus = factors[0]?.status;
+  const factorState: AdminMfaFactorState =
+    storedFactorStatus === 'active'
+      ? 'active'
+      : storedFactorStatus === 'pending'
+        ? 'pending'
+        : 'none';
 
   const activeRecoveryHolds = await db
     .select({ id: identityMfaRecoveries.id })
@@ -96,7 +126,7 @@ async function getAdminEntryState(
     .limit(1);
 
   if (activeRecoveryHolds.length > 0) {
-    return 'mfa_required';
+    return { entryState: 'mfa_required', factorState };
   }
 
   const mfaElevated = sources.isSessionMfaElevated
@@ -120,7 +150,10 @@ async function getAdminEntryState(
           .limit(1)
       ).length === 1;
 
-  return mfaElevated ? 'available' : 'mfa_required';
+  return {
+    entryState: mfaElevated ? 'available' : 'mfa_required',
+    factorState,
+  };
 }
 
 /**
@@ -133,15 +166,16 @@ export async function resolveWorkspaceAvailability(
   sessionId: string,
   sources: WorkspaceAuthorizationSources = {},
 ): Promise<WorkspaceAvailabilityDecision> {
-  const [seller, adminEntryState] = await Promise.all([
+  const [seller, admin] = await Promise.all([
     getSellerDecision(userId, sources),
-    getAdminEntryState(db, userId, sessionId, sources),
+    getAdminEntryDecision(db, userId, sessionId, sources),
   ]);
 
   return {
     sellerAvailable: seller.available,
     sellerApplicationStatus: seller.applicationStatus,
-    adminEntryState,
+    adminEntryState: admin.entryState,
+    adminMfaFactorState: admin.factorState,
   };
 }
 
@@ -183,14 +217,9 @@ export function requireWorkspaceAccess(
         throw new Error('Workspace authorization database is unavailable.');
       }
 
-      const adminEntryState = await getAdminEntryState(
-        db,
-        session.userId,
-        session.sessionId,
-        sources,
-      );
+      const admin = await getAdminEntryDecision(db, session.userId, session.sessionId, sources);
 
-      if (adminEntryState !== 'available') {
+      if (admin.entryState !== 'available') {
         sendWorkspaceError(request, reply, 403);
       }
     },

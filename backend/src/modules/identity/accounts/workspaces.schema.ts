@@ -1,10 +1,12 @@
 import type {
   AdminEntryState,
+  AdminMfaFactorState,
   SellerApplicationStatus,
 } from '../../../http/guards/authorize-workspace.js';
 
 export interface WorkspacesResponseData {
   defaultWorkspace: 'buyer';
+  adminMfaFactorState: AdminMfaFactorState;
   availableWorkspaces: {
     buyer: true;
     seller: boolean;
@@ -26,6 +28,7 @@ export const workspacesResponseSchema = {
         'availableWorkspaces',
         'sellerApplicationStatus',
         'adminEntryState',
+        'adminMfaFactorState',
       ],
       properties: {
         defaultWorkspace: { type: 'string', const: 'buyer' },
@@ -45,6 +48,10 @@ export const workspacesResponseSchema = {
         adminEntryState: {
           type: 'string',
           enum: ['unavailable', 'mfa_required', 'available'],
+        },
+        adminMfaFactorState: {
+          type: ['string', 'null'],
+          enum: ['none', 'pending', 'active', null],
         },
       },
     },

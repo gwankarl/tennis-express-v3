@@ -144,7 +144,7 @@ describe('administrator MFA challenge actions', () => {
 
     const result = await action({
       request: makeRequest(
-        { step: 'confirm', code: '123456', returnTo: '/account/profile' },
+        { step: 'confirm', code: '123456', returnTo: '/admin' },
         origin,
         true,
       ),
@@ -153,7 +153,7 @@ describe('administrator MFA challenge actions', () => {
     expect(result).toBeInstanceOf(Response);
     const response = result as Response;
     expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/account/profile');
+    expect(response.headers.get('Location')).toBe('/admin');
 
     const cookie = response.headers.get('set-cookie') ?? '';
     expect(cookie).toContain(`tx_session=${rotatedToken}`);

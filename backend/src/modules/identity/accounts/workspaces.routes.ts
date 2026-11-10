@@ -52,6 +52,7 @@ export function registerWorkspacesRoutes(
       );
 
       const data: WorkspacesResponseData = {
+        adminMfaFactorState: decision.adminMfaFactorState,
         defaultWorkspace: 'buyer',
         availableWorkspaces: {
           buyer: true,

@@ -13,6 +13,7 @@ export default [
     route('change-password', './routes/account/change-password.tsx'),
   ]),
   route('seller', './routes/account/seller.tsx'),
+  route('admin', './routes/admin/index.tsx'),
   route('admin/mfa/enrollment', './routes/admin/mfa-enrollment.tsx'),
   route('admin/mfa/challenge', './routes/admin/mfa-challenge.tsx'),
   route('admin/mfa/recovery', './routes/admin/mfa-recovery.tsx'),

@@ -10,6 +10,26 @@ vi.mock('~/.server/auth/session.js', () => ({
   clearSessionCookie: vi.fn(),
   loadProtectedUser: loadProtectedUserMock,
   readSessionToken: vi.fn(() => 'S'.repeat(43)),
+  safeReturnTo: (value: string | null | undefined) => {
+    if (
+      !value ||
+      !value.startsWith('/') ||
+      value.startsWith('//') ||
+      value.includes('\\') ||
+      Array.from(value).some((character) => (character.codePointAt(0) ?? 0) <= 0x1f)
+    ) {
+      return '/account';
+    }
+
+    try {
+      const parsed = new URL(value, 'http://tennis-xpress.local');
+      return parsed.origin === 'http://tennis-xpress.local'
+        ? `${parsed.pathname}${parsed.search}`
+        : '/account';
+    } catch {
+      return '/account';
+    }
+  },
 }));
 vi.mock('~/.server/api-client.js', () => {
   class ApiRequestError extends Error {
@@ -132,10 +152,11 @@ describe('administrator MFA enrollment route actions', () => {
         step: 'start',
         password,
         authorization,
+        returnTo: '/admin',
       }),
     } as Parameters<typeof action>[0]);
 
-    expect(resultData(result)).toMatchObject({ status: 'setup', setup });
+    expect(resultData(result)).toMatchObject({ status: 'setup', setup, returnTo: '/admin' });
     expect(JSON.stringify(result)).not.toContain(password);
     expect(JSON.stringify(result)).not.toContain(authorization);
     expect(requestJsonMock).toHaveBeenNthCalledWith(
@@ -198,10 +219,11 @@ describe('administrator MFA enrollment route actions', () => {
         setupSecret: setup.secret,
         setupUri: setup.provisioningUri,
         setupExpiresAt: setup.expiresAt,
+        returnTo: '/admin',
       }),
     } as Parameters<typeof action>[0]);
 
-    expect(resultData(result)).toEqual({ status: 'enrolled', recoveryCodes });
+    expect(resultData(result)).toEqual({ status: 'enrolled', recoveryCodes, returnTo: '/admin' });
     expect(JSON.stringify(result)).not.toContain('123456');
     expect(requestJsonMock).toHaveBeenNthCalledWith(
       2,
@@ -227,6 +249,7 @@ describe('administrator MFA enrollment route actions', () => {
         setupSecret: setup.secret,
         setupUri: setup.provisioningUri,
         setupExpiresAt: setup.expiresAt,
+        returnTo: '/admin',
       }),
     } as Parameters<typeof action>[0]);
 
@@ -254,13 +277,16 @@ describe('administrator MFA enrollment route actions', () => {
         setupSecret: setup.secret,
         setupUri: setup.provisioningUri,
         setupExpiresAt: setup.expiresAt,
+        returnTo: '/admin',
       }),
     } as Parameters<typeof action>[0]);
 
     expect(result).toBeInstanceOf(Response);
     const response = result as Response;
     expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/login?returnTo=%2Fadmin%2Fmfa%2Fenrollment');
+    expect(response.headers.get('Location')).toBe(
+      '/login?returnTo=%2Fadmin%2Fmfa%2Fenrollment%3FreturnTo%3D%252Fadmin',
+    );
     expect(clearSessionCookie).toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import {
   createDatabaseClient,
   type DatabaseClient,
 } from '../../../../../src/infrastructure/database/client.js';
+import { identityMfaFactors } from '../../../../../src/modules/identity/admin/admin-security.table.js';
 import { identityUserPermissions } from '../../../../../src/modules/identity/accounts/permission.table.js';
 import { identityUsers } from '../../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../../src/modules/identity/sessions/session.service.js';
@@ -39,6 +40,7 @@ interface AuthenticatedFixture {
 
 interface WorkspacesResponse {
   data: {
+    adminMfaFactorState: 'none' | 'pending' | 'active' | null;
     defaultWorkspace: 'buyer';
     availableWorkspaces: {
       buyer: true;
@@ -113,6 +115,27 @@ async function grantAdministrator(userId: string): Promise<void> {
   await getDatabase().db.insert(identityUserPermissions).values({
     userId,
     permission: 'administrator',
+  });
+}
+
+async function createActiveMfaFactor(userId: string): Promise<void> {
+  await getDatabase().db.insert(identityMfaFactors).values({
+    userId,
+    status: 'active',
+    secretCiphertext: 'synthetic-test-ciphertext',
+    keyVersion: 'synthetic-test-key-v1',
+    confirmedAt: new Date(),
+  });
+}
+
+async function createPendingMfaFactor(userId: string, sessionId: string): Promise<void> {
+  await getDatabase().db.insert(identityMfaFactors).values({
+    userId,
+    pendingSessionId: sessionId,
+    status: 'pending',
+    secretCiphertext: 'synthetic-test-ciphertext',
+    keyVersion: 'synthetic-test-key-v1',
+    pendingExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
 }
 
@@ -223,6 +246,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
   });
 
@@ -238,6 +262,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: 'pending',
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
 
     expectError(await requestTestSellerRoute(fixture.token), 403);
@@ -255,6 +280,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: true },
       sellerApplicationStatus: 'approved',
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
 
     const protectedSellerRoute = await requestTestSellerRoute(fixture.token);
@@ -273,6 +299,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: 'approved',
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
 
     expectError(await requestTestSellerRoute(fixture.token), 403);
@@ -286,6 +313,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
 
     await grantAdministrator(fixture.userId);
@@ -295,8 +323,19 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'mfa_required',
+      adminMfaFactorState: 'none',
     });
     expectError(await requestTestAdminRoute(fixture.token), 403);
+
+    await createActiveMfaFactor(fixture.userId);
+
+    await expectAvailability(fixture.token, {
+      defaultWorkspace: 'buyer',
+      availableWorkspaces: { buyer: true, seller: false },
+      sellerApplicationStatus: null,
+      adminEntryState: 'mfa_required',
+      adminMfaFactorState: 'active',
+    });
 
     mfaElevatedSessionIds.add(fixture.sessionId);
 
@@ -305,6 +344,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'available',
+      adminMfaFactorState: 'active',
     });
     expect((await requestTestAdminRoute(fixture.token)).statusCode).toBe(200);
 
@@ -322,6 +362,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
     expectError(await requestTestAdminRoute(fixture.token), 403);
 
@@ -333,6 +374,20 @@ describe('GET /api/v1/me/workspaces', () => {
     expect(currentUser.statusCode).toBe(200);
   });
 
+  it('reports a pending factor without treating it as an active factor', async () => {
+    const fixture = await createAuthenticatedFixture();
+    await grantAdministrator(fixture.userId);
+    await createPendingMfaFactor(fixture.userId, fixture.sessionId);
+
+    await expectAvailability(fixture.token, {
+      defaultWorkspace: 'buyer',
+      availableWorkspaces: { buyer: true, seller: false },
+      sellerApplicationStatus: null,
+      adminEntryState: 'mfa_required',
+      adminMfaFactorState: 'pending',
+    });
+  });
+
   it('rejects a session after account eligibility changes', async () => {
     const fixture = await createAuthenticatedFixture();
 
@@ -341,6 +396,7 @@ describe('GET /api/v1/me/workspaces', () => {
       availableWorkspaces: { buyer: true, seller: false },
       sellerApplicationStatus: null,
       adminEntryState: 'unavailable',
+      adminMfaFactorState: null,
     });
 
     await getDatabase()

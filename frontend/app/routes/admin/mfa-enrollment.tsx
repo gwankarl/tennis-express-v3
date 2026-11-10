@@ -14,7 +14,12 @@ import {
   RequestProtectionError,
   withProtectedSessionFormRequest,
 } from '~/.server/auth/request-protection.js';
-import { clearSessionCookie, loadProtectedUser, readSessionToken } from '~/.server/auth/session.js';
+import {
+  clearSessionCookie,
+  loadProtectedUser,
+  readSessionToken,
+  safeReturnTo,
+} from '~/.server/auth/session.js';
 import { data, Link, redirect, useFetcher, useLoaderData } from 'react-router';
 
 interface EnrollmentSetup {
@@ -36,6 +41,7 @@ interface EnrollmentActionData {
   step?: 'start' | 'confirm';
   setup?: EnrollmentSetup;
   recoveryCodes?: string[];
+  returnTo?: string;
   fieldErrors?: {
     authorization?: string;
     password?: string;
@@ -111,29 +117,32 @@ function readSetup(form: URLSearchParams): EnrollmentSetup | undefined {
   return { secret, provisioningUri, expiresAt };
 }
 
-function signInRedirect(request: Request, frontendOrigin: string): Response {
+function signInRedirect(request: Request, frontendOrigin: string, returnTo: string): Response {
   const headers = new Headers();
   clearSessionCookie(request, headers, frontendOrigin);
-  return redirect('/login?returnTo=%2Fadmin%2Fmfa%2Fenrollment', { headers });
+  const enrollmentPath = `/admin/mfa/enrollment?returnTo=${encodeURIComponent(returnTo)}`;
+  return redirect(`/login?returnTo=${encodeURIComponent(enrollmentPath)}`, { headers });
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
   const config = loadFrontendConfig();
   const protectedUser = await loadProtectedUser(request, config);
   const headers = new Headers({ 'Cache-Control': 'private, no-store' });
+  const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'));
 
   if (protectedUser.status === 'unavailable') {
-    return data({ status: 'unavailable' as const }, { headers });
+    return data({ status: 'unavailable' as const, returnTo }, { headers });
   }
 
   if (protectedUser.status === 'restricted') {
-    return data({ status: 'restricted' as const }, { headers });
+    return data({ status: 'restricted' as const, returnTo }, { headers });
   }
 
   return data(
     {
       status: 'authenticated' as const,
       csrfToken: protectedUser.csrfToken,
+      returnTo,
       hasRecoveryAuthorization: Boolean(
         readAdminEnrollmentAuthorization(request.headers.get('cookie')),
       ),
@@ -145,6 +154,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const config = loadFrontendConfig();
   const sessionToken = readSessionToken(request.headers.get('cookie'));
+  let returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'));
 
   if (!sessionToken) {
     const headers = new Headers();
@@ -153,7 +163,8 @@ export async function action({ request }: Route.ActionArgs) {
       clearSessionCookie(request, headers, config.frontendOrigin);
     }
 
-    return redirect('/login?returnTo=%2Fadmin%2Fmfa%2Fenrollment', { headers });
+    const enrollmentPath = `/admin/mfa/enrollment?returnTo=${encodeURIComponent(returnTo)}`;
+    return redirect(`/login?returnTo=${encodeURIComponent(enrollmentPath)}`, { headers });
   }
 
   let submittedStep: 'start' | 'confirm' | undefined;
@@ -165,6 +176,9 @@ export async function action({ request }: Route.ActionArgs) {
       const step = form.get('step');
       submittedStep = step === 'confirm' ? 'confirm' : 'start';
       submittedSetup = submittedStep === 'confirm' ? readSetup(form) : undefined;
+      returnTo = safeReturnTo(
+        typeof form.get('returnTo') === 'string' ? String(form.get('returnTo')) : returnTo,
+      );
 
       // Check that the bearer session is still valid after CSRF validation
       // and before attempting an MFA operation.
@@ -218,6 +232,7 @@ export async function action({ request }: Route.ActionArgs) {
           {
             status: 'setup',
             setup,
+            returnTo,
           },
           { headers },
         );
@@ -261,7 +276,7 @@ export async function action({ request }: Route.ActionArgs) {
       );
 
       return data<EnrollmentActionData>(
-        { status: 'enrolled', recoveryCodes: confirmed.recoveryCodes },
+        { status: 'enrolled', recoveryCodes: confirmed.recoveryCodes, returnTo },
         { headers: { 'Cache-Control': 'private, no-store' } },
       );
     });
@@ -282,7 +297,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (error instanceof ApiRequestError && error.kind === 'http') {
       if (error.status === 401 && (!sessionWasConfirmed || submittedStep === 'confirm')) {
-        return signInRedirect(request, config.frontendOrigin);
+        return signInRedirect(request, config.frontendOrigin, returnTo);
       }
 
       if (error.status === 401 && submittedStep === 'start') {
@@ -408,7 +423,10 @@ export default function AdminMfaEnrollmentPage() {
           <p className="mt-4 text-sm text-muted" role="status">
             MFA is enrolled. Administrator access still requires a separate elevation.
           </p>
-          <Link className="mt-6 inline-flex font-semibold text-forest underline" to="/account">
+          <Link
+            className="mt-6 inline-flex font-semibold text-forest underline"
+            to={result.returnTo ?? page.returnTo}
+          >
             Continue
           </Link>
         </AuthCard>
@@ -483,6 +501,7 @@ export default function AdminMfaEnrollmentPage() {
           >
             <input name="csrfToken" type="hidden" value={page.csrfToken} />
             <input name="step" type="hidden" value="start" />
+            <input name="returnTo" type="hidden" value={page.returnTo} />
 
             <FormField
               id="authorization"
@@ -564,6 +583,11 @@ export default function AdminMfaEnrollmentPage() {
             >
               <input name="csrfToken" type="hidden" value={page.csrfToken} />
               <input name="step" type="hidden" value="confirm" />
+              <input
+                name="returnTo"
+                type="hidden"
+                value={result?.returnTo ?? page.returnTo}
+              />
               <input name="setupSecret" type="hidden" value={setup.secret} />
               <input name="setupUri" type="hidden" value={setup.provisioningUri} />
               <input name="setupExpiresAt" type="hidden" value={setup.expiresAt} />

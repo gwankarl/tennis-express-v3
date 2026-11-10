@@ -11,6 +11,7 @@ export interface WorkspaceAvailability {
   };
   sellerApplicationStatus: 'not_applied' | 'pending' | 'approved' | 'rejected' | null;
   adminEntryState: 'unavailable' | 'mfa_required' | 'available';
+  adminMfaFactorState: 'none' | 'pending' | 'active' | null;
 }
 
 export type WorkspacePageData =
@@ -49,6 +50,13 @@ export function isWorkspaceAvailability(value: unknown): value is WorkspaceAvail
       value.adminEntryState === 'unavailable' ||
       value.adminEntryState === 'mfa_required' ||
       value.adminEntryState === 'available'
+    ) ||
+    !('adminMfaFactorState' in value) ||
+    !(
+      value.adminMfaFactorState === null ||
+      value.adminMfaFactorState === 'none' ||
+      value.adminMfaFactorState === 'pending' ||
+      value.adminMfaFactorState === 'active'
     )
   ) {
     return false;
