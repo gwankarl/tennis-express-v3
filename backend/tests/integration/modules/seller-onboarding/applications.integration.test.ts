@@ -12,6 +12,7 @@ import { identityUsers } from '../../../../src/modules/identity/accounts/user.ta
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
 import { sellerApplicationEvidence } from '../../../../src/modules/seller-onboarding/application-evidence.table.js';
+import { sellerApplicationReviewDecisions } from '../../../../src/modules/seller-onboarding/review.table.js';
 import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,
@@ -43,6 +44,12 @@ interface Application {
     byteSize: number;
     updatedAt: string;
   }>;
+  review: {
+    decision: 'approve' | 'request_changes' | 'reject';
+    feedback: string | null;
+    requestedEvidence: Array<'applicant_id' | 'business_registration' | 'proof_of_authority'>;
+    decidedAt: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -155,6 +162,22 @@ beforeAll(async () => {
 afterAll(async () => {
   try {
     if (database && testDatabaseVerified && fixtureUserIds.length > 0) {
+      await database.pool.query(
+        `DELETE FROM seller_application_review_decisions
+          WHERE reviewer_user_id = ANY($1::uuid[])
+             OR application_id IN (
+               SELECT id FROM seller_onboarding_applications WHERE user_id = ANY($1::uuid[])
+             )`,
+        [fixtureUserIds],
+      );
+      await database.pool.query(
+        `DELETE FROM seller_onboarding_operating_access
+          WHERE user_id = ANY($1::uuid[])
+             OR application_id IN (
+               SELECT id FROM seller_onboarding_applications WHERE user_id = ANY($1::uuid[])
+             )`,
+        [fixtureUserIds],
+      );
       await database.pool.query('DELETE FROM identity_users WHERE id = ANY($1::uuid[])', [
         fixtureUserIds,
       ]);
@@ -240,6 +263,63 @@ describe('seller application drafts', () => {
     expect(response.body).not.toContain('storageKey');
     expect(response.body).not.toContain('storage_key');
     expect(response.body).not.toContain(`synthetic/${runId}/${application.id}`);
+  });
+
+  it('returns the latest review feedback and requested evidence to the applicant', async () => {
+    const applicant = await createAuthenticatedFixture();
+    const reviewer = await createAuthenticatedFixture();
+    const created = await createDraft(applicant.token, { category: 'commercial' });
+    const application = created.json<ApplicationResponse>().data.application;
+
+    if (!application) {
+      throw new Error('Draft creation returned no application.');
+    }
+
+    const decidedAt = new Date('2026-11-01T12:00:00.000Z');
+    const firstSubmittedAt = new Date('2026-11-01T11:00:00.000Z');
+
+    await getDatabase()
+      .db.update(sellerApplications)
+      .set({
+        status: 'changes_requested',
+        revision: 2,
+        firstSubmittedAt,
+        proofOfAuthorityRequired: true,
+        applicantLegalName: 'Synthetic Applicant',
+        registeredBusinessName: 'Synthetic Tennis Ltd',
+        businessRole: 'Owner',
+        areaServed: 'Central Yaounde',
+        updatedAt: decidedAt,
+      })
+      .where(eq(sellerApplications.id, application.id));
+
+    await getDatabase()
+      .db.insert(sellerApplicationReviewDecisions)
+      .values({
+        applicationId: application.id,
+        reviewedRevision: 1,
+        reviewerUserId: reviewer.userId,
+        decision: 'request_changes',
+        feedback: 'Please provide proof of authority.',
+        requestedEvidence: ['proof_of_authority'],
+        decidedAt,
+      });
+
+    const response = await getCurrent(applicant.token);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<ApplicationResponse>().data.application).toMatchObject({
+      id: application.id,
+      status: 'changes_requested',
+      proofOfAuthorityRequired: true,
+      review: {
+        decision: 'request_changes',
+        feedback: 'Please provide proof of authority.',
+        requestedEvidence: ['proof_of_authority'],
+        decidedAt: decidedAt.toISOString(),
+      },
+    });
+    expect(response.body).not.toMatch(/reviewerUserId|reviewer_user_id|storageKey|storage_key/i);
   });
 
   it('reads and updates the session owner’s Draft', async () => {

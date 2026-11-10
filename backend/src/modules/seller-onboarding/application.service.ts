@@ -3,10 +3,12 @@ import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { identityUsers } from '../identity/accounts/user.table.js';
 import { sellerApplications, type sellerApplicationCategory } from './application.table.js';
 import { sellerApplicationEvidence } from './application-evidence.table.js';
+import { sellerApplicationReviewDecisions } from './review.table.js';
 import type {
   CreateSellerApplicationBody,
   SellerApplicationData,
   UpdateSellerApplicationBody,
+  SellerApplicationReviewData,
 } from './application.schema.js';
 
 type SellerApplicationDatabase = DatabaseClient['db'];
@@ -37,6 +39,35 @@ type SellerApplicationEvidenceSummaryRow = Pick<
   'type' | 'mediaType' | 'byteSize' | 'updatedAt'
 >;
 
+async function getLatestApplicantReview(
+  db: SellerApplicationDatabase,
+  applicationId: string,
+): Promise<SellerApplicationReviewData | null> {
+  const [review] = await db
+    .select({
+      decision: sellerApplicationReviewDecisions.decision,
+      feedback: sellerApplicationReviewDecisions.feedback,
+      requestedEvidence: sellerApplicationReviewDecisions.requestedEvidence,
+      decidedAt: sellerApplicationReviewDecisions.decidedAt,
+    })
+    .from(sellerApplicationReviewDecisions)
+    .where(eq(sellerApplicationReviewDecisions.applicationId, applicationId))
+    .orderBy(
+      desc(sellerApplicationReviewDecisions.decidedAt),
+      desc(sellerApplicationReviewDecisions.id),
+    )
+    .limit(1);
+
+  if (!review) {
+    return null;
+  }
+
+  return {
+    ...review,
+    decidedAt: review.decidedAt.toISOString(),
+  };
+}
+
 function toEvidenceData(row: SellerApplicationEvidenceSummaryRow) {
   return {
     type: row.type,
@@ -49,6 +80,7 @@ function toEvidenceData(row: SellerApplicationEvidenceSummaryRow) {
 function toApplicationData(
   row: ApplicationRow,
   evidence: SellerApplicationEvidenceSummaryRow[] = [],
+  review: SellerApplicationReviewData | null = null,
 ): SellerApplicationData {
   return {
     id: row.id,
@@ -64,6 +96,7 @@ function toApplicationData(
     storefrontName: row.storefrontName,
     proofOfAuthorityRequired: row.proofOfAuthorityRequired,
     evidence: evidence.map(toEvidenceData),
+    review,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -221,7 +254,8 @@ export async function getCurrentSellerApplication(
     .from(sellerApplicationEvidence)
     .where(eq(sellerApplicationEvidence.applicationId, application.id));
 
-  return toApplicationData(application, evidence);
+  const review = await getLatestApplicantReview(db, application.id);
+  return toApplicationData(application, evidence, review);
 }
 
 /**
@@ -234,7 +268,7 @@ export async function updateSellerApplication(
   applicationId: string,
   body: UpdateSellerApplicationBody,
 ): Promise<SellerApplicationData> {
-  return db.transaction(async (tx) => {
+  const updatedApplication = await db.transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(sellerApplications)
@@ -321,6 +355,9 @@ export async function updateSellerApplication(
 
     return toApplicationData(updated[0], evidence);
   });
+
+  const review = await getLatestApplicantReview(db, applicationId);
+  return { ...updatedApplication, review };
 }
 
 /**
@@ -338,7 +375,7 @@ export async function submitSellerApplication(
   expectedRevision: number,
   now = new Date(),
 ): Promise<SellerApplicationData> {
-  return db.transaction(async (tx) => {
+  const submittedApplication = await db.transaction(async (tx) => {
     const [user] = await tx
       .select({
         status: identityUsers.status,
@@ -462,4 +499,7 @@ export async function submitSellerApplication(
 
     return toApplicationData(updated, evidence);
   });
+
+  const review = await getLatestApplicantReview(db, applicationId);
+  return { ...submittedApplication, review };
 }

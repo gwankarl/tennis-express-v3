@@ -32,6 +32,13 @@ export interface SellerApplicationFields {
   storefrontName: string | null;
 }
 
+export interface SellerApplicationReviewData {
+  decision: 'approve' | 'request_changes' | 'reject';
+  feedback: string | null;
+  requestedEvidence: (typeof sellerApplicationEvidenceTypes)[number][];
+  decidedAt: string;
+}
+
 export interface SellerApplicationData extends SellerApplicationFields {
   id: string;
   category: (typeof sellerApplicationCategories)[number];
@@ -39,6 +46,7 @@ export interface SellerApplicationData extends SellerApplicationFields {
   revision: number;
   proofOfAuthorityRequired: boolean;
   evidence: SellerApplicationEvidenceData[];
+  review: SellerApplicationReviewData | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,6 +162,7 @@ const sellerApplicationSchema = {
     'storefrontName',
     'proofOfAuthorityRequired',
     'evidence',
+    'review',
     'createdAt',
     'updatedAt',
   ],
@@ -169,6 +178,25 @@ const sellerApplicationSchema = {
     evidence: {
       type: 'array',
       items: evidenceSchema,
+    },
+    review: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['decision', 'feedback', 'requestedEvidence', 'decidedAt'],
+          properties: {
+            decision: { type: 'string', enum: ['approve', 'request_changes', 'reject'] },
+            feedback: { type: ['string', 'null'] },
+            requestedEvidence: {
+              type: 'array',
+              items: { type: 'string', enum: sellerApplicationEvidenceTypes },
+            },
+            decidedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        { type: 'null' },
+      ],
     },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },

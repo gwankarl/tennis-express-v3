@@ -27,6 +27,7 @@ import {
 } from './infrastructure/storage/private-evidence-file-store.js';
 import { registerSellerApplicationEvidenceRoutes } from './modules/seller-onboarding/application-evidence.routes.js';
 import { registerSellerApplicationEvidenceReadRoutes } from './modules/seller-onboarding/application-evidence-read.routes.js';
+import { registerSellerApplicationReviewRoutes } from './modules/seller-onboarding/review.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -125,6 +126,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerSellerApplicationRoutes(app);
     registerSellerApplicationEvidenceRoutes(app);
     registerSellerApplicationEvidenceReadRoutes(app);
+    registerSellerApplicationReviewRoutes(app);
     registerAdminMfaRoutes(app);
   });
 

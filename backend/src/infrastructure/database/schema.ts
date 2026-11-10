@@ -6,3 +6,4 @@ export * from '../../modules/identity/token.table.js';
 export * from '../../modules/identity/admin/admin-security.table.js';
 export * from '../../modules/seller-onboarding/application.table.js';
 export * from '../../modules/seller-onboarding/application-evidence.table.js';
+export * from '../../modules/seller-onboarding/review.table.js';
