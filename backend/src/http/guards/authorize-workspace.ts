@@ -21,8 +21,8 @@ export type AdminEntryState = 'unavailable' | 'mfa_required' | 'available';
 export type AdminMfaFactorState = 'none' | 'pending' | 'active' | null;
 
 /**
- * Seller onboarding must eventually provide application status and operating
- * access independently. No production provider is configured yet.
+ * Seller onboarding provides application status and operating access
+ * independently. Missing facts fail closed in both navigation and guards.
  */
 export interface SellerWorkspaceFacts {
   applicationStatus: SellerApplicationStatus;
@@ -30,7 +30,8 @@ export interface SellerWorkspaceFacts {
 }
 
 /**
- * Optional future evidence sources. Omitted seller or MFA evidence fails closed.
+ * Optional authorization sources. App defaults supply database-backed seller
+ * facts; omitted facts or MFA elevation still fail closed.
  */
 export interface WorkspaceAuthorizationSources {
   getSellerWorkspaceFacts?: (userId: string) => Promise<SellerWorkspaceFacts | undefined>;
@@ -56,6 +57,11 @@ function sendWorkspaceError(request: FastifyRequest, reply: FastifyReply, status
   reply.code(status).send(body);
 }
 
+/** Seller access requires an approved application and active operating access. */
+export function isSellerWorkspaceAvailable(facts: SellerWorkspaceFacts | undefined): boolean {
+  return facts?.applicationStatus === 'approved' && facts.operatingAccess === 'active';
+}
+
 async function getSellerDecision(
   userId: string,
   sources: WorkspaceAuthorizationSources,
@@ -63,7 +69,7 @@ async function getSellerDecision(
   const facts = await sources.getSellerWorkspaceFacts?.(userId);
 
   return {
-    available: facts?.applicationStatus === 'approved' && facts.operatingAccess === 'active',
+    available: isSellerWorkspaceAvailable(facts),
     applicationStatus: facts?.applicationStatus ?? null,
   };
 }
@@ -197,12 +203,17 @@ export function requireWorkspaceAccess(
         return;
       }
 
+      const authorizationSources: WorkspaceAuthorizationSources = {
+        ...request.server.workspaceAuthorizationSources,
+        ...sources,
+      };
+
       if (workspace === 'buyer') {
         return;
       }
 
       if (workspace === 'seller') {
-        const seller = await getSellerDecision(session.userId, sources);
+        const seller = await getSellerDecision(session.userId, authorizationSources);
 
         if (!seller.available) {
           sendWorkspaceError(request, reply, 403);
@@ -217,7 +228,12 @@ export function requireWorkspaceAccess(
         throw new Error('Workspace authorization database is unavailable.');
       }
 
-      const admin = await getAdminEntryDecision(db, session.userId, session.sessionId, sources);
+      const admin = await getAdminEntryDecision(
+        db,
+        session.userId,
+        session.sessionId,
+        authorizationSources,
+      );
 
       if (admin.entryState !== 'available') {
         sendWorkspaceError(request, reply, 403);

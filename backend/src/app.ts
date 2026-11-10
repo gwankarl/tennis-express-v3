@@ -11,6 +11,7 @@ import type { DatabaseClient } from './infrastructure/database/client.js';
 import { createLoggerOptions } from './infrastructure/logging/logger.js';
 import { registerHealthRoutes } from './modules/health/health.routes.js';
 import type { WorkspaceAuthorizationSources } from './http/guards/authorize-workspace.js';
+import { createSellerWorkspaceFactsProvider } from './modules/seller-onboarding/seller-workspace-facts.js';
 import { registerWorkspacesRoutes } from './modules/identity/accounts/workspaces.routes.js';
 import { registerVerificationRoutes } from './modules/identity/verification/verification.routes.js';
 import { registerSessionAuthRoutes } from './modules/identity/sessions/auth.routes.js';
@@ -35,6 +36,7 @@ declare module 'fastify' {
     emailSender: EmailSender | null;
     frontendOrigin: string;
     mfaPool: DatabaseClient['pool'] | null;
+    workspaceAuthorizationSources: WorkspaceAuthorizationSources;
     adminMfaConfig: import('./config/env.js').AdminMfaConfig | null;
     evidenceFileStore: PrivateEvidenceFileStore | null;
   }
@@ -56,6 +58,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     requestIdHeader: false,
   });
 
+  const workspaceAuthorizationSources: WorkspaceAuthorizationSources = {
+    ...(options.database
+      ? { getSellerWorkspaceFacts: createSellerWorkspaceFactsProvider(options.database.db) }
+      : {}),
+    ...options.workspaceAuthorizationSources,
+  };
+
   registerAuthenticationContext(app);
 
   app.register(fastifyMultipart, {
@@ -72,6 +81,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.decorate('emailSender', options.emailSender ?? null);
   app.decorate('frontendOrigin', options.frontendOrigin ?? 'http://127.0.0.1:5173');
   app.decorate('evidenceFileStore', options.evidenceFileStore ?? null);
+  app.decorate('workspaceAuthorizationSources', workspaceAuthorizationSources);
 
   if (options.database) {
     app.addHook('onClose', async () => {
@@ -122,7 +132,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerPasswordRecoveryRoutes(app);
     registerPasswordChangeRoutes(app);
     registerUserProfileRoutes(app);
-    registerWorkspacesRoutes(app, options.workspaceAuthorizationSources);
+    registerWorkspacesRoutes(app, workspaceAuthorizationSources);
     registerSellerApplicationRoutes(app);
     registerSellerApplicationEvidenceRoutes(app);
     registerSellerApplicationEvidenceReadRoutes(app);
