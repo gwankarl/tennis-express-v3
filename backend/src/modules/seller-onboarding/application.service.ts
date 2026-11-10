@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { identityUsers } from '../identity/accounts/user.table.js';
 import { sellerApplications, type sellerApplicationCategory } from './application.table.js';
+import { sellerApplicationEvidence } from './application-evidence.table.js';
 import type {
   CreateSellerApplicationBody,
   SellerApplicationData,
@@ -14,11 +15,17 @@ type ApplicationRow = typeof sellerApplications.$inferSelect;
 const openStatuses = ['draft', 'submitted', 'changes_requested'] as const;
 const editableStatuses = ['draft', 'changes_requested'] as const;
 
+export interface ApplicationValidationDetail {
+  field: string;
+  rule: string;
+}
+
 export class SellerApplicationServiceError extends Error {
   constructor(
     readonly statusCode: 400 | 403 | 404 | 409,
     readonly field?: string,
     readonly rule?: string,
+    readonly details?: readonly ApplicationValidationDetail[],
   ) {
     super('Seller application request failed.');
     this.name = 'SellerApplicationServiceError';
@@ -268,5 +275,136 @@ export async function updateSellerApplication(
     }
 
     return toApplicationData(updated[0]);
+  });
+}
+
+/**
+ * Submits an owned Draft or Changes requested application.
+ *
+ * The account lock rechecks eligibility at commit time. The application row
+ * lock serializes submission against draft edits and evidence replacement.
+ * Required evidence is read after acquiring that lock, and the revision is
+ * advanced with the status transition in the same transaction.
+ */
+export async function submitSellerApplication(
+  db: SellerApplicationDatabase,
+  userId: string,
+  applicationId: string,
+  expectedRevision: number,
+  now = new Date(),
+): Promise<SellerApplicationData> {
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({
+        status: identityUsers.status,
+        emailVerifiedAt: identityUsers.emailVerifiedAt,
+      })
+      .from(identityUsers)
+      .where(eq(identityUsers.id, userId))
+      .for('update')
+      .limit(1);
+
+    if (!user || user.status !== 'active' || user.emailVerifiedAt === null) {
+      throw new SellerApplicationServiceError(403);
+    }
+
+    const [application] = await tx
+      .select()
+      .from(sellerApplications)
+      .where(and(eq(sellerApplications.id, applicationId), eq(sellerApplications.userId, userId)))
+      .for('update')
+      .limit(1);
+
+    // Foreign and unknown IDs deliberately share the same generic not-found result.
+    if (!application) {
+      throw new SellerApplicationServiceError(404);
+    }
+
+    if (application.revision !== expectedRevision) {
+      throw new SellerApplicationServiceError(409, 'expectedRevision', 'stale_revision');
+    }
+
+    if (!(editableStatuses as readonly string[]).includes(application.status)) {
+      throw new SellerApplicationServiceError(409, 'status', 'application_not_editable');
+    }
+
+    const missing: ApplicationValidationDetail[] = [];
+    const requiredFields =
+      application.category === 'individual'
+        ? ([
+            ['legalName', application.applicantLegalName],
+            ['sellerDisplayName', application.sellerDisplayName],
+            ['areaServed', application.areaServed],
+          ] as const)
+        : ([
+            ['legalName', application.applicantLegalName],
+            ['registeredBusinessName', application.registeredBusinessName],
+            ['businessRole', application.businessRole],
+            ['areaServed', application.areaServed],
+          ] as const);
+
+    for (const [field, value] of requiredFields) {
+      if (value === null || value.trim().length === 0) {
+        missing.push({ field, rule: 'required' });
+      }
+    }
+
+    const evidenceRows = await tx
+      .select({ type: sellerApplicationEvidence.type })
+      .from(sellerApplicationEvidence)
+      .where(eq(sellerApplicationEvidence.applicationId, application.id));
+
+    const uploadedEvidence = new Set(evidenceRows.map((evidence) => evidence.type));
+    const requiredEvidence =
+      application.category === 'individual'
+        ? (['applicant_id'] as const)
+        : (['applicant_id', 'business_registration'] as const);
+
+    for (const type of requiredEvidence) {
+      if (!uploadedEvidence.has(type)) {
+        missing.push({ field: `evidence.${type}`, rule: 'required' });
+      }
+    }
+
+    if (
+      application.category === 'commercial' &&
+      application.proofOfAuthorityRequired &&
+      !uploadedEvidence.has('proof_of_authority')
+    ) {
+      missing.push({
+        field: 'evidence.proof_of_authority',
+        rule: 'required',
+      });
+    }
+
+    if (missing.length > 0) {
+      throw new SellerApplicationServiceError(400, undefined, undefined, missing);
+    }
+
+    const submittedAt = new Date(now);
+    const [updated] = await tx
+      .update(sellerApplications)
+      .set({
+        status: 'submitted',
+        revision: sql`${sellerApplications.revision} + 1`,
+        firstSubmittedAt: application.firstSubmittedAt ?? submittedAt,
+        proofOfAuthorityRequired: false,
+        updatedAt: submittedAt,
+      })
+      .where(
+        and(
+          eq(sellerApplications.id, application.id),
+          eq(sellerApplications.userId, userId),
+          eq(sellerApplications.revision, expectedRevision),
+          inArray(sellerApplications.status, [...editableStatuses]),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      throw new SellerApplicationServiceError(409, 'expectedRevision', 'stale_revision');
+    }
+
+    return toApplicationData(updated);
   });
 }

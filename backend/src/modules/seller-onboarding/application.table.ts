@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  boolean,
   index,
   integer,
   pgEnum,
@@ -50,6 +51,8 @@ export const sellerApplications = pgTable(
 
     revision: integer('revision').notNull().default(1),
     firstSubmittedAt: timestamp('first_submitted_at', { withTimezone: true }),
+    // Set by a review decision when Commercial proof of authority is required.
+    proofOfAuthorityRequired: boolean('proof_of_authority_required').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -87,6 +90,10 @@ export const sellerApplications = pgTable(
         (${table.category} = 'commercial'
           AND ${table.sellerDisplayName} IS NULL)
       )`,
+    ),
+    check(
+      'seller_onboarding_applications_authority_request_commercial_ck',
+      sql`${table.category} = 'commercial' OR ${table.proofOfAuthorityRequired} = false`,
     ),
     check(
       'seller_onboarding_applications_submission_timestamp_ck',

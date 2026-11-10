@@ -1,0 +1,2 @@
+ALTER TABLE "seller_onboarding_applications" ADD COLUMN "proof_of_authority_required" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "seller_onboarding_applications" ADD CONSTRAINT "seller_onboarding_applications_authority_request_commercial_ck" CHECK ("seller_onboarding_applications"."category" = 'commercial' OR "seller_onboarding_applications"."proof_of_authority_required" = false);

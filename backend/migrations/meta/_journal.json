@@ -57,6 +57,13 @@
       "when": 1794314147583,
       "tag": "0007_lazy_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794316762243,
+      "tag": "0008_flaky_expediter",
+      "breakpoints": true
     }
   ]
 }

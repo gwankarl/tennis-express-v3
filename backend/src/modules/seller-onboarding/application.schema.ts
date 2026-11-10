@@ -45,6 +45,10 @@ export interface UpdateSellerApplicationBody extends Partial<CreateSellerApplica
   expectedRevision: number;
 }
 
+export interface SubmitSellerApplicationBody {
+  expectedRevision: number;
+}
+
 const nullableText = (maxLength: number) => ({
   anyOf: [{ type: 'string', minLength: 1, maxLength, pattern: '\\S' }, { type: 'null' }],
 });
@@ -93,6 +97,15 @@ export const updateSellerApplicationRequestSchema = {
     { required: ['category'] },
     ...applicantFieldNames.map((field) => ({ required: [field] })),
   ],
+} as const;
+
+export const submitSellerApplicationRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedRevision'],
+  properties: {
+    expectedRevision: { type: 'integer', minimum: 1 },
+  },
 } as const;
 
 const sellerApplicationSchema = {
