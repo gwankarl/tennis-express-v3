@@ -7,6 +7,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --project tsconfig.json",
     "db:check": "tsx scripts/check-db.ts",
+    "db:seed:catalog": "tsx scripts/seed-catalog.ts",
+    "db:seed:catalog:test": "tsx scripts/seed-catalog.ts --test",
     "email:send-samples": "tsx scripts/send-email-samples.ts",
     "admin:operate": "tsx scripts/admin-operations.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",

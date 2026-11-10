@@ -7,3 +7,5 @@ export * from '../../modules/identity/admin/admin-security.table.js';
 export * from '../../modules/seller-onboarding/application.table.js';
 export * from '../../modules/seller-onboarding/application-evidence.table.js';
 export * from '../../modules/seller-onboarding/review.table.js';
+export * from '../../modules/catalog/category.table.js';
+export * from '../../modules/catalog/brand.table.js';
