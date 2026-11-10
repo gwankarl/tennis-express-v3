@@ -1,14 +1,11 @@
 import { defineConfig } from 'drizzle-kit';
 import { loadBackendEnv } from './src/config/env.js';
+import { requireTestDatabaseUrl } from './tests/helpers/test-database.js';
 import { migrationConfig } from './drizzle.config.js';
 
 loadBackendEnv();
 
-const databaseUrl = process.env.TEST_DATABASE_URL?.trim();
-
-if (!databaseUrl) {
-  throw new Error('TEST_DATABASE_URL is required for test migrations.');
-}
+const databaseUrl = requireTestDatabaseUrl(process.env);
 
 export default defineConfig({
   ...migrationConfig,
