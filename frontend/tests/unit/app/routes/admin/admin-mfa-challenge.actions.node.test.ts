@@ -143,11 +143,7 @@ describe('administrator MFA challenge actions', () => {
       } as never);
 
     const result = await action({
-      request: makeRequest(
-        { step: 'confirm', code: '123456', returnTo: '/admin' },
-        origin,
-        true,
-      ),
+      request: makeRequest({ step: 'confirm', code: '123456', returnTo: '/admin' }, origin, true),
     } as Parameters<typeof action>[0]);
 
     expect(result).toBeInstanceOf(Response);

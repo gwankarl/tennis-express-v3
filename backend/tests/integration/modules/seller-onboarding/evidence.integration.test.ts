@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import {
   createDatabaseClient,
@@ -19,7 +19,6 @@ import { identityUserPermissions } from '../../../../src/modules/identity/accoun
 import { identitySessions } from '../../../../src/modules/identity/sessions/session.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
-import { sellerApplicationEvidence } from '../../../../src/modules/seller-onboarding/application-evidence.table.js';
 import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,
@@ -148,11 +147,7 @@ function readEvidence(token: string, applicationId: string, type = 'applicant_id
   });
 }
 
-function updateApplication(
-  token: string,
-  applicationId: string,
-  payload: Record<string, unknown>,
-) {
+function updateApplication(token: string, applicationId: string, payload: Record<string, unknown>) {
   return getApp().inject({
     method: 'PATCH',
     url: `/api/v1/me/seller-applications/${applicationId}`,

@@ -132,12 +132,8 @@
           "name": "identity_user_permissions_user_id_identity_users_id_fk",
           "tableFrom": "identity_user_permissions",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -145,10 +141,7 @@
       "compositePrimaryKeys": {
         "identity_user_permissions_pk": {
           "name": "identity_user_permissions_pk",
-          "columns": [
-            "user_id",
-            "permission"
-          ]
+          "columns": ["user_id", "permission"]
         }
       },
       "uniqueConstraints": {},
@@ -193,12 +186,8 @@
           "name": "identity_credentials_user_id_identity_users_id_fk",
           "tableFrom": "identity_credentials",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -392,12 +381,8 @@
           "name": "identity_sessions_user_id_identity_users_id_fk",
           "tableFrom": "identity_sessions",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -535,12 +520,8 @@
           "name": "identity_tokens_user_id_identity_users_id_fk",
           "tableFrom": "identity_tokens",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -859,12 +840,8 @@
           "name": "identity_admin_enrollment_authorizations_target_user_id_identity_users_id_fk",
           "tableFrom": "identity_admin_enrollment_authorizations",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "target_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -872,12 +849,8 @@
           "name": "identity_admin_enrollment_authorizations_recovery_id_identity_mfa_recoveries_id_fk",
           "tableFrom": "identity_admin_enrollment_authorizations",
           "tableTo": "identity_mfa_recoveries",
-          "columnsFrom": [
-            "recovery_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["recovery_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1014,14 +987,8 @@
           "name": "identity_admin_mfa_elevation_challenges_session_user_fk",
           "tableFrom": "identity_admin_mfa_elevation_challenges",
           "tableTo": "identity_sessions",
-          "columnsFrom": [
-            "session_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "id",
-            "user_id"
-          ],
+          "columnsFrom": ["session_id", "user_id"],
+          "columnsTo": ["id", "user_id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1252,11 +1219,7 @@
       "compositePrimaryKeys": {
         "identity_mfa_attempt_counters_pk": {
           "name": "identity_mfa_attempt_counters_pk",
-          "columns": [
-            "scope",
-            "action",
-            "subject_digest"
-          ]
+          "columns": ["scope", "action", "subject_digest"]
         }
       },
       "uniqueConstraints": {},
@@ -1405,12 +1368,8 @@
           "name": "identity_mfa_factors_user_id_identity_users_id_fk",
           "tableFrom": "identity_mfa_factors",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1418,12 +1377,8 @@
           "name": "identity_mfa_factors_pending_session_id_identity_sessions_id_fk",
           "tableFrom": "identity_mfa_factors",
           "tableTo": "identity_sessions",
-          "columnsFrom": [
-            "pending_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["pending_session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1564,12 +1519,8 @@
           "name": "identity_mfa_recoveries_user_id_identity_users_id_fk",
           "tableFrom": "identity_mfa_recoveries",
           "tableTo": "identity_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1693,12 +1644,8 @@
           "name": "identity_mfa_recovery_codes_factor_id_identity_mfa_factors_id_fk",
           "tableFrom": "identity_mfa_recovery_codes",
           "tableTo": "identity_mfa_factors",
-          "columnsFrom": [
-            "factor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["factor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1723,26 +1670,17 @@
     "public.identity_permission": {
       "name": "identity_permission",
       "schema": "public",
-      "values": [
-        "administrator"
-      ]
+      "values": ["administrator"]
     },
     "public.identity_token_purpose": {
       "name": "identity_token_purpose",
       "schema": "public",
-      "values": [
-        "email_verification",
-        "password_reset"
-      ]
+      "values": ["email_verification", "password_reset"]
     },
     "public.identity_admin_audit_actor_type": {
       "name": "identity_admin_audit_actor_type",
       "schema": "public",
-      "values": [
-        "user",
-        "operator",
-        "system"
-      ]
+      "values": ["user", "operator", "system"]
     },
     "public.identity_admin_audit_event_type": {
       "name": "identity_admin_audit_event_type",
@@ -1767,57 +1705,32 @@
     "public.identity_admin_audit_outcome": {
       "name": "identity_admin_audit_outcome",
       "schema": "public",
-      "values": [
-        "success",
-        "denied",
-        "pending",
-        "no_op"
-      ]
+      "values": ["success", "denied", "pending", "no_op"]
     },
     "public.identity_mfa_attempt_action": {
       "name": "identity_mfa_attempt_action",
       "schema": "public",
-      "values": [
-        "enrollment",
-        "elevation",
-        "recovery"
-      ]
+      "values": ["enrollment", "elevation", "recovery"]
     },
     "public.identity_mfa_attempt_scope": {
       "name": "identity_mfa_attempt_scope",
       "schema": "public",
-      "values": [
-        "account",
-        "ip"
-      ]
+      "values": ["account", "ip"]
     },
     "public.identity_mfa_factor_status": {
       "name": "identity_mfa_factor_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "active",
-        "revoked"
-      ]
+      "values": ["pending", "active", "revoked"]
     },
     "public.identity_mfa_recovery_method": {
       "name": "identity_mfa_recovery_method",
       "schema": "public",
-      "values": [
-        "recovery_code",
-        "operator"
-      ]
+      "values": ["recovery_code", "operator"]
     },
     "public.identity_mfa_recovery_status": {
       "name": "identity_mfa_recovery_status",
       "schema": "public",
-      "values": [
-        "requested",
-        "approved",
-        "completed",
-        "denied",
-        "cancelled"
-      ]
+      "values": ["requested", "approved", "completed", "denied", "cancelled"]
     }
   },
   "schemas": {},

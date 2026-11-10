@@ -584,9 +584,7 @@ export default function SellerApplicationEditPage() {
 
   const categoryLocked = application?.status === 'changes_requested';
   const requiredEvidence: EvidenceType[] =
-    category === 'individual'
-      ? ['applicant_id']
-      : ['applicant_id', 'business_registration'];
+    category === 'individual' ? ['applicant_id'] : ['applicant_id', 'business_registration'];
 
   if (
     category === 'commercial' &&
@@ -831,7 +829,9 @@ export default function SellerApplicationEditPage() {
                     <Alert>We couldn’t verify this upload. Refresh the page and try again.</Alert>
                   )}
                   {evidenceActionMatches && evidenceAction?.status === 'unavailable' && (
-                    <Alert>The file could not be uploaded. Your existing file remains available.</Alert>
+                    <Alert>
+                      The file could not be uploaded. Your existing file remains available.
+                    </Alert>
                   )}
                   {evidenceActionMatches && evidenceAction?.status === 'uploaded' && (
                     <p className="text-sm font-semibold text-forest" role="status">

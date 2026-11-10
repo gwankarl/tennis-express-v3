@@ -69,7 +69,9 @@ function getApp(): FastifyInstance {
   return app;
 }
 
-async function createUser(options: { administrator?: boolean; elevation?: 'valid' | 'none' | 'expired' } = {}) {
+async function createUser(
+  options: { administrator?: boolean; elevation?: 'valid' | 'none' | 'expired' } = {},
+) {
   sequence += 1;
   const email = `seller-review-${runId}-${sequence}@example.test`;
   const [user] = await getDatabase()
@@ -181,11 +183,7 @@ function request(
   });
 }
 
-function decide(
-  reviewer: UserFixture,
-  applicationId: string,
-  payload: Record<string, unknown>,
-) {
+function decide(reviewer: UserFixture, applicationId: string, payload: Record<string, unknown>) {
   return request(
     reviewer,
     'POST',
@@ -261,18 +259,14 @@ describe('administrator seller application review', () => {
     await addEvidence(own.id, 'applicant_id');
 
     const queue = await request(ownAdmin, 'GET', '/api/v1/admin/seller-applications');
-    const queueIds = queue.json<{ data: { items: Array<{ id: string }> } }>().data.items.map(
-      (item) => item.id,
-    );
+    const queueIds = queue
+      .json<{ data: { items: Array<{ id: string }> } }>()
+      .data.items.map((item) => item.id);
     expect(queue.statusCode).toBe(200);
     expect(queueIds).toContain(other.id);
     expect(queueIds).not.toContain(own.id);
 
-    const ownDetail = await request(
-      ownAdmin,
-      'GET',
-      `/api/v1/admin/seller-applications/${own.id}`,
-    );
+    const ownDetail = await request(ownAdmin, 'GET', `/api/v1/admin/seller-applications/${own.id}`);
     const ownEvidence = await request(
       ownAdmin,
       'GET',

@@ -65,10 +65,7 @@ async function run(): Promise<void> {
   const config = parseEnv(process.env);
   const isOperatorMfaRecovery = intent.action === 'operator_mfa_recovery';
 
-  if (
-    isOperatorMfaRecovery &&
-    (!config.adminMfa || !config.email.enabled || !config.email.smtp)
-  ) {
+  if (isOperatorMfaRecovery && (!config.adminMfa || !config.email.enabled || !config.email.smtp)) {
     throw new Error('Operator MFA recovery requires MFA keys and configured SMTP delivery.');
   }
 

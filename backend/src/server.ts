@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { createDatabaseClient, type DatabaseClient } from './infrastructure/database/client.js';
 import { createSmtpEmailSender } from './infrastructure/email/smtp-email-sender.js';
 import { PrivateEvidenceFileStore } from './infrastructure/storage/private-evidence-file-store.js';
+import { sellerApplicationEvidence } from './modules/seller-onboarding/application-evidence.table.js';
 
 function registerShutdownHandlers(app: FastifyInstance): void {
   let shuttingDown = false;
@@ -77,6 +78,12 @@ async function startServer(): Promise<void> {
     const evidenceFileStore = new PrivateEvidenceFileStore(config.sellerEvidenceStorageDirectory);
     await evidenceFileStore.initialize();
     await evidenceFileStore.cleanupAbandonedStaging();
+    const referencedEvidence = await database.db
+      .select({ storageKey: sellerApplicationEvidence.storageKey })
+      .from(sellerApplicationEvidence);
+    await evidenceFileStore.cleanupOrphanedObjects(
+      new Set(referencedEvidence.map(({ storageKey }) => storageKey)),
+    );
 
     app = buildApp({
       database,

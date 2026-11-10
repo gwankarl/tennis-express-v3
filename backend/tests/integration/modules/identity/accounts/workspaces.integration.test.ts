@@ -129,14 +129,16 @@ async function createActiveMfaFactor(userId: string): Promise<void> {
 }
 
 async function createPendingMfaFactor(userId: string, sessionId: string): Promise<void> {
-  await getDatabase().db.insert(identityMfaFactors).values({
-    userId,
-    pendingSessionId: sessionId,
-    status: 'pending',
-    secretCiphertext: 'synthetic-test-ciphertext',
-    keyVersion: 'synthetic-test-key-v1',
-    pendingExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
-  });
+  await getDatabase()
+    .db.insert(identityMfaFactors)
+    .values({
+      userId,
+      pendingSessionId: sessionId,
+      status: 'pending',
+      secretCiphertext: 'synthetic-test-ciphertext',
+      keyVersion: 'synthetic-test-key-v1',
+      pendingExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
 }
 
 function requestWorkspaces(token?: string) {

@@ -25,11 +25,7 @@ vi.mock('~/.server/api-client.js', () => {
 });
 
 import { ApiRequestError } from '~/.server/api-client.js';
-import {
-  appendSessionCookie,
-  loadProtectedUser,
-  safeReturnTo,
-} from '~/.server/auth/session.js';
+import { appendSessionCookie, loadProtectedUser, safeReturnTo } from '~/.server/auth/session.js';
 import {
   issueSessionCsrfToken,
   withProtectedSessionFormRequest,

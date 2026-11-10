@@ -16,8 +16,6 @@ import { identityUserPermissions } from '../../../../src/modules/identity/accoun
 import { identityUsers } from '../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import { identitySessions } from '../../../../src/modules/identity/sessions/session.table.js';
-import { sellerApplicationReviewDecisions } from '../../../../src/modules/seller-onboarding/review.table.js';
-import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
 import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,
@@ -170,11 +168,7 @@ function uploadEvidence(
   );
 }
 
-function makeDecision(
-  reviewer: UserFixture,
-  id: string,
-  payload: Record<string, unknown>,
-) {
+function makeDecision(reviewer: UserFixture, id: string, payload: Record<string, unknown>) {
   return request(reviewer, 'POST', `/api/v1/admin/seller-applications/${id}/decision`, payload);
 }
 
@@ -270,7 +264,8 @@ describe('complete seller onboarding workflows', () => {
     const submitted = await submitApplication(applicant, draft.id, evidenceRevision);
     expect(submitted.statusCode, submitted.body).toBe(200);
     const submittedApplication = submitted.json<ApplicationResponse>().data.application;
-    if (!submittedApplication) throw new Error('Submission response did not include an application.');
+    if (!submittedApplication)
+      throw new Error('Submission response did not include an application.');
     expect(submittedApplication.status).toBe('submitted');
     await expectSellerAvailability(applicant, 'pending', false);
 
@@ -340,7 +335,8 @@ describe('complete seller onboarding workflows', () => {
     const submitted = await submitApplication(applicant, draft.id, registrationRevision);
     expect(submitted.statusCode, submitted.body).toBe(200);
     const submittedApplication = submitted.json<ApplicationResponse>().data.application;
-    if (!submittedApplication) throw new Error('Submission response did not include an application.');
+    if (!submittedApplication)
+      throw new Error('Submission response did not include an application.');
 
     const requested = await makeDecision(reviewer, draft.id, {
       expectedRevision: submittedApplication.revision,
@@ -430,7 +426,8 @@ describe('complete seller onboarding workflows', () => {
     const submitted = await submitApplication(applicant, draft.id, evidenceRevision);
     expect(submitted.statusCode, submitted.body).toBe(200);
     const submittedApplication = submitted.json<ApplicationResponse>().data.application;
-    if (!submittedApplication) throw new Error('Submission response did not include an application.');
+    if (!submittedApplication)
+      throw new Error('Submission response did not include an application.');
 
     const rejection = await makeDecision(reviewer, draft.id, {
       expectedRevision: submittedApplication.revision,

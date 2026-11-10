@@ -13,15 +13,6 @@ const config = { frontendOrigin: origin };
 const challenge = 'C'.repeat(43);
 const authorization = 'A'.repeat(43);
 
-function cookieValue(setCookie: string | null, name: string): string | undefined {
-  if (!setCookie) return undefined;
-
-  const first = setCookie.split(';', 1)[0] ?? '';
-  const prefix = `${name}=`;
-
-  return first.startsWith(prefix) ? first.slice(prefix.length) : undefined;
-}
-
 describe('administrator MFA cookies', () => {
   it('stores and reads a short-lived challenge in a path-scoped HttpOnly cookie', () => {
     const headers = new Headers();

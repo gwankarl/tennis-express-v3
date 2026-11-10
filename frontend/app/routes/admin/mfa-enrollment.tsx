@@ -583,11 +583,7 @@ export default function AdminMfaEnrollmentPage() {
             >
               <input name="csrfToken" type="hidden" value={page.csrfToken} />
               <input name="step" type="hidden" value="confirm" />
-              <input
-                name="returnTo"
-                type="hidden"
-                value={result?.returnTo ?? page.returnTo}
-              />
+              <input name="returnTo" type="hidden" value={result?.returnTo ?? page.returnTo} />
               <input name="setupSecret" type="hidden" value={setup.secret} />
               <input name="setupUri" type="hidden" value={setup.provisioningUri} />
               <input name="setupExpiresAt" type="hidden" value={setup.expiresAt} />

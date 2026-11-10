@@ -1,7 +1,10 @@
 import type { Route } from './+types/sign-out';
 import { ApiRequestError, requestJson } from '~/.server/api-client.js';
 import { loadFrontendConfig } from '~/.server/env.js';
-import { RequestProtectionError, withProtectedSessionFormRequest } from '~/.server/auth/request-protection.js';
+import {
+  RequestProtectionError,
+  withProtectedSessionFormRequest,
+} from '~/.server/auth/request-protection.js';
 import { clearSessionCookie, readSessionToken } from '~/.server/auth/session.js';
 import { data, redirect } from 'react-router';
 
@@ -53,11 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
       throw error;
     }
 
-    if (
-      error instanceof ApiRequestError &&
-      error.kind === 'http' &&
-      error.status === 401
-    ) {
+    if (error instanceof ApiRequestError && error.kind === 'http' && error.status === 401) {
       const headers = new Headers();
       clearSessionCookie(request, headers, config.frontendOrigin);
       return redirect('/login?returnTo=%2Faccount', { headers });
