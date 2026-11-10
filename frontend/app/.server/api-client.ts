@@ -58,6 +58,13 @@ export interface JsonRequestOptions<T> {
   signal?: AbortSignal;
 }
 
+export interface MultipartRequestOptions<T> {
+  validateData(value: unknown): value is T;
+  body: FormData;
+  headers?: HeadersInit;
+  signal?: AbortSignal;
+}
+
 /**
  * Sends a JSON request to a relative endpoint under /api/v1 and validates its response.
  */
@@ -149,6 +156,76 @@ export async function requestJson<T>(endpoint: string, options: JsonRequestOptio
     throw new ApiRequestError('network', 'The backend could not be reached.', {
       requestId,
     });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortForCaller);
+  }
+}
+
+/**
+ * Sends a multipart request through the server-only API transport. The runtime
+ * sets the multipart boundary; callers must not set Content-Type themselves.
+ */
+export async function requestMultipart<T>(
+  endpoint: string,
+  options: MultipartRequestOptions<T>,
+): Promise<T> {
+  const config = loadFrontendConfig();
+  const url = buildApiUrl(config.backendApiBaseUrl, endpoint);
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const abortForCaller = () => controller.abort();
+  options.signal?.addEventListener('abort', abortForCaller, { once: true });
+
+  if (options.signal?.aborted) controller.abort();
+
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, config.backendApiTimeoutMs);
+
+  const headers = new Headers(options.headers);
+  headers.set('accept', 'application/json');
+  headers.delete('content-type');
+
+  let requestId: string | undefined;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: options.body,
+      signal: controller.signal,
+    });
+
+    requestId = response.headers.get('x-request-id') || undefined;
+    const responseBody = await readJsonResponse(response, requestId);
+
+    if (!response.ok) {
+      const apiError = parseApiErrorResponse(responseBody, requestId);
+
+      throw new ApiRequestError('http', 'The backend request failed.', {
+        status: response.status,
+        errorCode: apiError.error.code,
+        requestId: apiError.requestId || requestId,
+        details: apiError.error.details,
+      });
+    }
+
+    return parseApiSuccess(responseBody, options.validateData, requestId);
+  } catch (error) {
+    if (error instanceof ApiRequestError) throw error;
+
+    if (options.signal?.aborted) {
+      throw new ApiRequestError('cancelled', 'The API request was cancelled.', { requestId });
+    }
+
+    if (timedOut) {
+      throw new ApiRequestError('timeout', 'The backend request timed out.', { requestId });
+    }
+
+    throw new ApiRequestError('network', 'The backend could not be reached.', { requestId });
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener('abort', abortForCaller);

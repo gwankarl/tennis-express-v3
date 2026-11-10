@@ -177,6 +177,126 @@ export async function withProtectedSessionFormRequest<T>(
   return operation(form);
 }
 
+const MAX_PROTECTED_EVIDENCE_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_MULTIPART_BODY_BYTES = MAX_PROTECTED_EVIDENCE_FILE_BYTES + 64 * 1024;
+
+/**
+ * Verifies a session-bound CSRF token before parsing one bounded multipart
+ * evidence file. The multipart overhead allowance includes the boundary and
+ * the CSRF field; the file itself is checked against the backend limit.
+ */
+export async function withProtectedSessionMultipartRequest<T>(
+  request: Request,
+  sessionToken: string,
+  settings: RequestProtectionSettings,
+  operation: (form: FormData) => Promise<T> | T,
+): Promise<T> {
+  assertSigningSecret(settings.csrfSecret);
+  assertTrustedRequestOrigin(request, settings.frontendOrigin);
+
+  if (request.method !== 'POST' || !SESSION_TOKEN_PATTERN.test(sessionToken)) {
+    throw new RequestProtectionError(403, 'The form could not be verified.');
+  }
+
+  const contentType = request.headers.get('content-type') ?? '';
+
+  if (!/^multipart\/form-data;\s*boundary=/iu.test(contentType)) {
+    throw new RequestProtectionError(415, 'The form content type is not supported.');
+  }
+
+  const contentLength = request.headers.get('content-length');
+
+  if (contentLength !== null) {
+    if (!/^\d+$/u.test(contentLength)) {
+      throw new RequestProtectionError(400, 'The form request is invalid.');
+    }
+
+    if (Number(contentLength) > MAX_MULTIPART_BODY_BYTES) {
+      throw new RequestProtectionError(413, 'The form is too large.');
+    }
+  }
+
+  if (!request.body) {
+    throw new RequestProtectionError(400, 'The form request is invalid.');
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      totalBytes += value.byteLength;
+
+      if (totalBytes > MAX_MULTIPART_BODY_BYTES) {
+        void reader.cancel().catch(() => undefined);
+        throw new RequestProtectionError(413, 'The form is too large.');
+      }
+
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof RequestProtectionError) throw error;
+    throw new RequestProtectionError(400, 'The form request could not be read.');
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let form: FormData;
+
+  try {
+    const parsingRequest = new Request(request.url, {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body: bytes,
+    });
+    form = await parsingRequest.formData();
+  } catch {
+    throw new RequestProtectionError(400, 'The multipart form is invalid.');
+  }
+
+  const csrfTokens = form.getAll('csrfToken');
+  const files = form.getAll('file');
+  const keys = [...new Set([...form.keys()])];
+
+  if (
+    csrfTokens.length !== 1 ||
+    typeof csrfTokens[0] !== 'string' ||
+    files.length !== 1 ||
+    typeof files[0] === 'string' ||
+    keys.some((key) => key !== 'csrfToken' && key !== 'file') ||
+    files[0].size > MAX_PROTECTED_EVIDENCE_FILE_BYTES
+  ) {
+    if (
+      files.length === 1 &&
+      typeof files[0] !== 'string' &&
+      files[0].size > MAX_PROTECTED_EVIDENCE_FILE_BYTES
+    ) {
+      throw new RequestProtectionError(413, 'The evidence file is too large.');
+    }
+
+    throw new RequestProtectionError(400, 'The multipart form is invalid.');
+  }
+
+  if (!verifySessionCsrfToken(csrfTokens[0], sessionToken, settings)) {
+    throw new RequestProtectionError(403, 'The form could not be verified.');
+  }
+
+  return operation(form);
+}
+
 /** Clears the anonymous CSRF cookie after a successful sign-in. */
 export function clearAnonymousCsrfCookie(
   request: Request,

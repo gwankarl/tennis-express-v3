@@ -32,7 +32,24 @@ export class SellerApplicationServiceError extends Error {
   }
 }
 
-function toApplicationData(row: ApplicationRow): SellerApplicationData {
+type SellerApplicationEvidenceSummaryRow = Pick<
+  typeof sellerApplicationEvidence.$inferSelect,
+  'type' | 'mediaType' | 'byteSize' | 'updatedAt'
+>;
+
+function toEvidenceData(row: SellerApplicationEvidenceSummaryRow) {
+  return {
+    type: row.type,
+    mediaType: row.mediaType,
+    byteSize: row.byteSize,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toApplicationData(
+  row: ApplicationRow,
+  evidence: SellerApplicationEvidenceSummaryRow[] = [],
+): SellerApplicationData {
   return {
     id: row.id,
     category: row.category,
@@ -45,6 +62,8 @@ function toApplicationData(row: ApplicationRow): SellerApplicationData {
     registeredBusinessName: row.registeredBusinessName,
     businessRole: row.businessRole,
     storefrontName: row.storefrontName,
+    proofOfAuthorityRequired: row.proofOfAuthorityRequired,
+    evidence: evidence.map(toEvidenceData),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -186,7 +205,23 @@ export async function getCurrentSellerApplication(
     .orderBy(desc(sellerApplications.createdAt), desc(sellerApplications.id))
     .limit(1);
 
-  return rows[0] ? toApplicationData(rows[0]) : null;
+  const application = rows[0];
+
+  if (!application) {
+    return null;
+  }
+
+  const evidence = await db
+    .select({
+      type: sellerApplicationEvidence.type,
+      mediaType: sellerApplicationEvidence.mediaType,
+      byteSize: sellerApplicationEvidence.byteSize,
+      updatedAt: sellerApplicationEvidence.updatedAt,
+    })
+    .from(sellerApplicationEvidence)
+    .where(eq(sellerApplicationEvidence.applicationId, application.id));
+
+  return toApplicationData(application, evidence);
 }
 
 /**
@@ -274,7 +309,17 @@ export async function updateSellerApplication(
       throw new SellerApplicationServiceError(409, 'expectedRevision', 'stale_revision');
     }
 
-    return toApplicationData(updated[0]);
+    const evidence = await tx
+      .select({
+        type: sellerApplicationEvidence.type,
+        mediaType: sellerApplicationEvidence.mediaType,
+        byteSize: sellerApplicationEvidence.byteSize,
+        updatedAt: sellerApplicationEvidence.updatedAt,
+      })
+      .from(sellerApplicationEvidence)
+      .where(eq(sellerApplicationEvidence.applicationId, updated[0].id));
+
+    return toApplicationData(updated[0], evidence);
   });
 }
 
@@ -405,6 +450,16 @@ export async function submitSellerApplication(
       throw new SellerApplicationServiceError(409, 'expectedRevision', 'stale_revision');
     }
 
-    return toApplicationData(updated);
+    const evidence = await tx
+      .select({
+        type: sellerApplicationEvidence.type,
+        mediaType: sellerApplicationEvidence.mediaType,
+        byteSize: sellerApplicationEvidence.byteSize,
+        updatedAt: sellerApplicationEvidence.updatedAt,
+      })
+      .from(sellerApplicationEvidence)
+      .where(eq(sellerApplicationEvidence.applicationId, updated.id));
+
+    return toApplicationData(updated, evidence);
   });
 }

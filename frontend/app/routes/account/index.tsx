@@ -80,6 +80,13 @@ export default function AccountPage() {
             Change password
           </Link>
 
+          <Link
+            className="mt-3 inline-flex font-semibold text-forest underline"
+            to="/account/seller-application"
+          >
+            Become a seller
+          </Link>
+
           <signOutFetcher.Form
             action="/sign-out"
             className="mt-6"

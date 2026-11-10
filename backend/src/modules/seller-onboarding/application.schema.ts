@@ -7,6 +7,21 @@ export const sellerApplicationStatuses = [
   'rejected',
 ] as const;
 
+export const sellerApplicationEvidenceTypes = [
+  'applicant_id',
+  'business_registration',
+  'proof_of_authority',
+] as const;
+
+export const sellerEvidenceMediaTypes = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+
+export interface SellerApplicationEvidenceData {
+  type: (typeof sellerApplicationEvidenceTypes)[number];
+  mediaType: (typeof sellerEvidenceMediaTypes)[number];
+  byteSize: number;
+  updatedAt: string;
+}
+
 export interface SellerApplicationFields {
   legalName: string | null;
   sellerDisplayName: string | null;
@@ -22,6 +37,8 @@ export interface SellerApplicationData extends SellerApplicationFields {
   category: (typeof sellerApplicationCategories)[number];
   status: (typeof sellerApplicationStatuses)[number];
   revision: number;
+  proofOfAuthorityRequired: boolean;
+  evidence: SellerApplicationEvidenceData[];
   createdAt: string;
   updatedAt: string;
 }
@@ -108,6 +125,18 @@ export const submitSellerApplicationRequestSchema = {
   },
 } as const;
 
+const evidenceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'mediaType', 'byteSize', 'updatedAt'],
+  properties: {
+    type: { type: 'string', enum: sellerApplicationEvidenceTypes },
+    mediaType: { type: 'string', enum: sellerEvidenceMediaTypes },
+    byteSize: { type: 'integer', minimum: 1, maximum: 10485760 },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
 const sellerApplicationSchema = {
   type: 'object',
   additionalProperties: false,
@@ -123,6 +152,8 @@ const sellerApplicationSchema = {
     'registeredBusinessName',
     'businessRole',
     'storefrontName',
+    'proofOfAuthorityRequired',
+    'evidence',
     'createdAt',
     'updatedAt',
   ],
@@ -134,6 +165,11 @@ const sellerApplicationSchema = {
     ...Object.fromEntries(
       applicantFieldNames.map((field) => [field, { type: ['string', 'null'] }]),
     ),
+    proofOfAuthorityRequired: { type: 'boolean' },
+    evidence: {
+      type: 'array',
+      items: evidenceSchema,
+    },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },

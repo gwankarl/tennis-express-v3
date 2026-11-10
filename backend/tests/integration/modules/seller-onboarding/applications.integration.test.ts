@@ -11,6 +11,7 @@ import { buildApp } from '../../../../src/app.js';
 import { identityUsers } from '../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
+import { sellerApplicationEvidence } from '../../../../src/modules/seller-onboarding/application-evidence.table.js';
 import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,
@@ -35,6 +36,13 @@ interface Application {
   registeredBusinessName: string | null;
   businessRole: string | null;
   storefrontName: string | null;
+  proofOfAuthorityRequired: boolean;
+  evidence: Array<{
+    type: 'applicant_id' | 'business_registration' | 'proof_of_authority';
+    mediaType: 'image/jpeg' | 'image/png' | 'application/pdf';
+    byteSize: number;
+    updatedAt: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,8 +187,59 @@ describe('seller application drafts', () => {
       registeredBusinessName: null,
       businessRole: null,
       storefrontName: null,
+      proofOfAuthorityRequired: false,
+      evidence: [],
     });
     expect(response.body).not.toMatch(/userId|email|storageKey|storage_key/i);
+  });
+
+  it('returns safe evidence status and a proof-of-authority request on the current application', async () => {
+    const user = await createAuthenticatedFixture();
+    const created = await createDraft(user.token, { category: 'commercial' });
+    const application = created.json<ApplicationResponse>().data.application;
+
+    if (!application) {
+      throw new Error('Draft creation returned no application.');
+    }
+
+    const evidenceUpdatedAt = new Date('2026-10-01T12:00:00.000Z');
+
+    await getDatabase()
+      .db.update(sellerApplications)
+      .set({ proofOfAuthorityRequired: true })
+      .where(eq(sellerApplications.id, application.id));
+
+    await getDatabase()
+      .db.insert(sellerApplicationEvidence)
+      .values({
+        applicationId: application.id,
+        type: 'applicant_id',
+        storageKey: `synthetic/${runId}/${application.id}/applicant-id.pdf`,
+        mediaType: 'application/pdf',
+        byteSize: 2048,
+        sha256: 'a'.repeat(64),
+        createdAt: evidenceUpdatedAt,
+        updatedAt: evidenceUpdatedAt,
+      });
+
+    const response = await getCurrent(user.token);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<ApplicationResponse>().data.application).toMatchObject({
+      id: application.id,
+      proofOfAuthorityRequired: true,
+      evidence: [
+        {
+          type: 'applicant_id',
+          mediaType: 'application/pdf',
+          byteSize: 2048,
+          updatedAt: evidenceUpdatedAt.toISOString(),
+        },
+      ],
+    });
+    expect(response.body).not.toContain('storageKey');
+    expect(response.body).not.toContain('storage_key');
+    expect(response.body).not.toContain(`synthetic/${runId}/${application.id}`);
   });
 
   it('reads and updates the session owner’s Draft', async () => {
