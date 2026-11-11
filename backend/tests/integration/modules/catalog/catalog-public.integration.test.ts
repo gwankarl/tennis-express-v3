@@ -16,6 +16,11 @@ import { catalogCategories } from '../../../../src/modules/catalog/category.tabl
 import { catalogProducts } from '../../../../src/modules/catalog/product.table.js';
 import { catalogVariants } from '../../../../src/modules/catalog/variant.table.js';
 import {
+  launchCatalogBrands,
+  launchCatalogCategories,
+  seedCatalogLaunchData,
+} from '../../../../src/modules/catalog/launch-data.js';
+import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,
 } from '../../../helpers/test-database.js';
@@ -495,6 +500,224 @@ describe('public catalog routes', () => {
       slug: brand.slug,
       imageUrl: null,
     });
+  });
+
+  it('creates products across all launch categories through Admin APIs and reads them publicly', async () => {
+    const db = getDatabase();
+    const admin = await createAdmin();
+
+    await seedCatalogLaunchData(db.db);
+
+    const launchCategories = await db.db
+      .select()
+      .from(catalogCategories)
+      .where(inArray(
+        catalogCategories.slug,
+        launchCatalogCategories.map((category) => category.slug),
+      ));
+    const launchBrands = await db.db
+      .select()
+      .from(catalogBrands)
+      .where(inArray(catalogBrands.slug, launchCatalogBrands.map((brand) => brand.slug)));
+
+    expect(launchCategories.map((category) => category.slug).sort()).toEqual(
+      launchCatalogCategories.map((category) => category.slug).sort(),
+    );
+    expect(launchBrands.map((brand) => brand.slug).sort()).toEqual(
+      launchCatalogBrands.map((brand) => brand.slug).sort(),
+    );
+
+    const categoryByRuleSet = new Map(
+      launchCategories.map((category) => [category.attributeRuleSetKey, category]),
+    );
+    const wilson = launchBrands.find((brand) => brand.slug === 'wilson');
+    const racquets = categoryByRuleSet.get('tennis_racquets');
+
+    if (!wilson || !racquets) {
+      throw new Error('The seeded launch catalog is missing Wilson or Tennis racquets.');
+    }
+
+    const categoryImageBefore = racquets.imageUrl;
+    const brandImageBefore = wilson.imageUrl;
+    const categoryImage = `https://images.example.test/${runId}/launch-racquets.png`;
+    const brandImage = `https://images.example.test/${runId}/launch-wilson.png`;
+
+    const updateCategoryImage = await request(
+      'PATCH',
+      `/api/v1/admin/catalog/categories/${racquets.id}`,
+      admin.token,
+      { imageUrl: categoryImage },
+    );
+    const updateBrandImage = await request(
+      'PATCH',
+      `/api/v1/admin/catalog/brands/${wilson.id}`,
+      admin.token,
+      { imageUrl: brandImage },
+    );
+    expect(updateCategoryImage.statusCode, updateCategoryImage.body).toBe(200);
+    expect(updateBrandImage.statusCode, updateBrandImage.body).toBe(200);
+
+    const cases: Array<{
+      ruleSetKey: (typeof launchCatalogCategories)[number]['attributeRuleSetKey'];
+      name: string;
+      brandId: string | null;
+      fixedAttributes: Record<string, unknown>;
+      variantOptionKeys?: string[];
+      variants?: Array<{ optionValues: Record<string, unknown> }>;
+    }> = [
+      {
+        ruleSetKey: 'tennis_racquets',
+        name: `Launch racquet ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: {
+          audience: 'adult',
+          lengthInches: 27,
+          gripSize: 'L2',
+        },
+      },
+      {
+        ruleSetKey: 'tennis_balls',
+        name: `Launch balls ${runId}`,
+        brandId: null,
+        fixedAttributes: {
+          typeOrStage: 'standard',
+          pressurization: 'pressurized',
+          ballsPerPack: 3,
+        },
+      },
+      {
+        ruleSetKey: 'racquet_strings',
+        name: `Launch strings ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: {
+          material: 'polyester',
+          thicknessMm: 1.25,
+          format: 'set',
+          lengthMetres: 12,
+        },
+      },
+      {
+        ruleSetKey: 'grips_overgrips',
+        name: `Launch grips ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: {
+          gripType: 'overgrip',
+          piecesPerPack: 3,
+        },
+      },
+      {
+        ruleSetKey: 'tennis_shoes',
+        name: `Launch shoes ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: { courtSurface: 'hard_court' },
+        variantOptionKeys: ['euSize'],
+        variants: [
+          { optionValues: { euSize: 42 } },
+          { optionValues: { euSize: 42.5 } },
+        ],
+      },
+      {
+        ruleSetKey: 'tennis_bags',
+        name: `Launch bag ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: {
+          bagType: 'backpack',
+          racquetCapacity: 2,
+        },
+      },
+      {
+        ruleSetKey: 'racquet_accessories',
+        name: `Launch accessory ${runId}`,
+        brandId: wilson.id,
+        fixedAttributes: {
+          accessoryType: 'dampener',
+          piecesPerPack: 1,
+        },
+      },
+    ];
+
+    try {
+      const created = [];
+
+      for (const productCase of cases) {
+        const category = categoryByRuleSet.get(productCase.ruleSetKey);
+        if (!category) {
+          throw new Error(`Missing launch category for ${productCase.ruleSetKey}.`);
+        }
+
+        const product = await createProduct(admin.token, {
+          categoryId: category.id,
+          brandId: productCase.brandId,
+          name: productCase.name,
+          isVisible: true,
+          fixedAttributes: productCase.fixedAttributes,
+          ...(productCase.variantOptionKeys
+            ? { variantOptionKeys: productCase.variantOptionKeys }
+            : {}),
+          ...(productCase.variants ? { variants: productCase.variants } : {}),
+        });
+        created.push({ ...productCase, productId: product.product.id });
+      }
+
+      const publicList = await request('GET', '/api/v1/catalog/products?limit=100&offset=0');
+      expect(publicList.statusCode, publicList.body).toBe(200);
+      const listedProducts = publicList.json<{
+        data: { items: PublicProductWithVariants[]; limit: number; offset: number };
+      }>().data.items;
+
+      for (const productCase of created) {
+        const detail = await request('GET', `/api/v1/catalog/products/${productCase.productId}`);
+        expect(detail.statusCode, detail.body).toBe(200);
+
+        const result = detail.json<{ data: PublicProductWithVariants }>().data;
+        const category = categoryByRuleSet.get(productCase.ruleSetKey);
+        expect(category).toBeDefined();
+        expect(result.product.category).toMatchObject({
+          id: category?.id,
+          slug: category?.slug,
+          attributeRuleSetKey: productCase.ruleSetKey,
+        });
+        expect(result.product.fixedAttributes).toEqual(productCase.fixedAttributes);
+        expect(listedProducts.some((item) => item.product.id === productCase.productId)).toBe(true);
+
+        if (productCase.brandId === null) {
+          expect(result.product.brand).toBeNull();
+        } else {
+          expect(result.product.brand?.id).toBe(wilson.id);
+          expect(result.product.brand?.imageUrl).toBe(brandImage);
+        }
+
+        if (productCase.ruleSetKey === 'tennis_racquets') {
+          expect(result.product.category.imageUrl).toBe(categoryImage);
+          expect(result.variants).toHaveLength(1);
+          expect(result.variants[0]?.isDefault).toBe(true);
+          expect(result.variants[0]?.optionValues).toEqual({});
+        }
+
+        if (productCase.ruleSetKey === 'tennis_shoes') {
+          expect(result.product.variantOptionKeys).toEqual(['euSize']);
+          expect(result.variants.map((variant) => variant.optionValues.euSize).sort()).toEqual([
+            42,
+            42.5,
+          ]);
+        }
+      }
+    } finally {
+      const restoreCategory = await request(
+        'PATCH',
+        `/api/v1/admin/catalog/categories/${racquets.id}`,
+        admin.token,
+        { imageUrl: categoryImageBefore },
+      );
+      const restoreBrand = await request(
+        'PATCH',
+        `/api/v1/admin/catalog/brands/${wilson.id}`,
+        admin.token,
+        { imageUrl: brandImageBefore },
+      );
+      expect(restoreCategory.statusCode, restoreCategory.body).toBe(200);
+      expect(restoreBrand.statusCode, restoreBrand.body).toBe(200);
+    }
   });
 
   it('rejects invalid query values using the API validation envelope', async () => {
