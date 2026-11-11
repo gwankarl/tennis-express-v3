@@ -15,7 +15,6 @@ import { catalogBrands } from '../../../../src/modules/catalog/brand.table.js';
 import { catalogCategories } from '../../../../src/modules/catalog/category.table.js';
 import { catalogProducts } from '../../../../src/modules/catalog/product.table.js';
 import { seedCatalogLaunchData } from '../../../../src/modules/catalog/launch-data.js';
-import { catalogVariants } from '../../../../src/modules/catalog/variant.table.js';
 import {
   requireTestDatabaseUrl,
   verifyTestDatabaseIdentity,

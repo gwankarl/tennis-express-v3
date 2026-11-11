@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { catalogBrands } from './brand.table.js';
 import { catalogCategories } from './category.table.js';

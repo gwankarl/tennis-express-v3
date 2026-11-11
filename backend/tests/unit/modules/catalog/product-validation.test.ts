@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  catalogAttributeRulesByRuleSet,
-} from '../../../../src/modules/catalog/attribute-rules.js';
+import { catalogAttributeRulesByRuleSet } from '../../../../src/modules/catalog/attribute-rules.js';
 import type { CatalogAttributeRuleSetKey } from '../../../../src/modules/catalog/category-attribute-rule-sets.js';
 import {
   CatalogProductValidationError,

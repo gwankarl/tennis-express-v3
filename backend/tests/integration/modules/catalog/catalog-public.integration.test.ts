@@ -14,7 +14,6 @@ import { identitySessions } from '../../../../src/modules/identity/sessions/sess
 import { catalogBrands } from '../../../../src/modules/catalog/brand.table.js';
 import { catalogCategories } from '../../../../src/modules/catalog/category.table.js';
 import { catalogProducts } from '../../../../src/modules/catalog/product.table.js';
-import { catalogVariants } from '../../../../src/modules/catalog/variant.table.js';
 import {
   launchCatalogBrands,
   launchCatalogCategories,
@@ -511,14 +510,21 @@ describe('public catalog routes', () => {
     const launchCategories = await db.db
       .select()
       .from(catalogCategories)
-      .where(inArray(
-        catalogCategories.slug,
-        launchCatalogCategories.map((category) => category.slug),
-      ));
+      .where(
+        inArray(
+          catalogCategories.slug,
+          launchCatalogCategories.map((category) => category.slug),
+        ),
+      );
     const launchBrands = await db.db
       .select()
       .from(catalogBrands)
-      .where(inArray(catalogBrands.slug, launchCatalogBrands.map((brand) => brand.slug)));
+      .where(
+        inArray(
+          catalogBrands.slug,
+          launchCatalogBrands.map((brand) => brand.slug),
+        ),
+      );
 
     expect(launchCategories.map((category) => category.slug).sort()).toEqual(
       launchCatalogCategories.map((category) => category.slug).sort(),
@@ -611,10 +617,7 @@ describe('public catalog routes', () => {
         brandId: wilson.id,
         fixedAttributes: { courtSurface: 'hard_court' },
         variantOptionKeys: ['euSize'],
-        variants: [
-          { optionValues: { euSize: 42 } },
-          { optionValues: { euSize: 42.5 } },
-        ],
+        variants: [{ optionValues: { euSize: 42 } }, { optionValues: { euSize: 42.5 } }],
       },
       {
         ruleSetKey: 'tennis_bags',
@@ -697,8 +700,7 @@ describe('public catalog routes', () => {
         if (productCase.ruleSetKey === 'tennis_shoes') {
           expect(result.product.variantOptionKeys).toEqual(['euSize']);
           expect(result.variants.map((variant) => variant.optionValues.euSize).sort()).toEqual([
-            42,
-            42.5,
+            42, 42.5,
           ]);
         }
       }
