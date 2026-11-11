@@ -47,7 +47,8 @@ export class CatalogProductServiceError extends Error {
   constructor(
     readonly statusCode: 400 | 404 | 409,
     readonly field: 'id' | 'categoryId' | 'brandId' | 'name' | 'attributes' | 'variants',
-    readonly rule: 'required' | 'not_found' | 'inactive' | 'configuration_required' | 'duplicate',
+    readonly rule:
+      'required' | 'not_found' | 'inactive' | 'configuration_required' | 'duplicate' | 'referenced',
   ) {
     super('Catalog product request failed.');
     this.name = 'CatalogProductServiceError';
@@ -77,6 +78,26 @@ function isUniqueViolation(error: unknown): boolean {
     const candidate = current as { code?: unknown; cause?: unknown };
 
     if (candidate.code === '23505') {
+      return true;
+    }
+
+    current = candidate.cause;
+  }
+
+  return false;
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (typeof current === 'object' && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const candidate = current as { code?: unknown; cause?: unknown };
+
+    // PostgreSQL reports RESTRICT deletes as 23001 (restrict_violation),
+    // while NO ACTION foreign-key violations use 23503.
+    if (candidate.code === '23503' || candidate.code === '23001') {
       return true;
     }
 
@@ -424,6 +445,10 @@ export async function updateCatalogProduct(
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new CatalogProductServiceError(409, 'variants', 'duplicate');
+    }
+
+    if (isForeignKeyViolation(error)) {
+      throw new CatalogProductServiceError(409, 'variants', 'referenced');
     }
 
     throw error;

@@ -32,6 +32,7 @@ import { registerSellerApplicationReviewRoutes } from './modules/seller-onboardi
 import { registerCatalogReferenceAdminRoutes } from './modules/catalog/catalog-reference-admin.routes.js';
 import { registerCatalogPublicRoutes } from './modules/catalog/catalog-public.routes.js';
 import { registerCatalogProductAdminRoutes } from './modules/catalog/product-admin.routes.js';
+import { registerSellerListingRoutes } from './modules/listings/listing.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -59,6 +60,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     logger: createLoggerOptions(),
     genReqId: generateRequestId,
     requestIdHeader: false,
+    // Keep `additionalProperties: false` schemas strict instead of silently
+    // stripping unexpected request fields before validation.
+    ajv: { customOptions: { removeAdditional: false } },
   });
 
   const workspaceAuthorizationSources: WorkspaceAuthorizationSources = {
@@ -143,6 +147,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerCatalogPublicRoutes(app);
     registerCatalogReferenceAdminRoutes(app);
     registerCatalogProductAdminRoutes(app);
+    registerSellerListingRoutes(app);
     registerAdminMfaRoutes(app);
   });
 
