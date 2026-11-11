@@ -32,6 +32,7 @@ import {
   getSellerListingImageFile,
   listSellerListingDraftImages,
 } from './listing-image-read.service.js';
+import { getSellerListingReadiness } from './listing-readiness.service.js';
 import {
   createSellerListingRequestSchema,
   patchSellerListingVariantRequestSchema,
@@ -48,6 +49,7 @@ import {
   sellerListingImageUploadQuerySchema,
   sellerListingImageUploadResponseSchema,
   sellerListingImagesReadResponseSchema,
+  sellerListingReadinessResponseSchema,
 } from './listing.schema.js';
 
 interface ListingImageParams extends ListingParams {
@@ -265,6 +267,47 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
         };
 
         return reply.code(200).send(response);
+      } catch (error) {
+        return sendServiceError(error, request, reply);
+      }
+    },
+  );
+
+  app.get<{ Params: ListingParams }>(
+    '/api/v1/seller/listings/:id/readiness',
+    {
+      preHandler: requireWorkspaceAccess('seller'),
+      schema: {
+        tags: ['Seller listings'],
+        summary: 'Evaluate completeness of an owned listing draft',
+        params: sellerListingIdParamsSchema,
+        response: {
+          200: sellerListingReadinessResponseSchema,
+          401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+          500: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header('cache-control', 'private, no-store');
+
+      if (!app.db || !app.listingImageFileStore || !request.identitySession) {
+        return reply.code(503).send(requestError(request.id));
+      }
+
+      try {
+        const readiness = await getSellerListingReadiness(
+          app.db,
+          app.listingImageFileStore,
+          request.identitySession.userId,
+          request.params.id,
+        );
+
+        return reply.code(200).send({ data: readiness });
       } catch (error) {
         return sendServiceError(error, request, reply);
       }

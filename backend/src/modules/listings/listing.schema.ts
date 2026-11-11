@@ -1,4 +1,5 @@
 import { sellerListingCondition, sellerListingStatus } from './listing.table.js';
+import type { ListingCompletenessResult } from './listing-completeness.js';
 
 const nullableTitle = {
   anyOf: [{ type: 'string', minLength: 1, maxLength: 120, pattern: '\\S' }, { type: 'null' }],
@@ -336,6 +337,49 @@ export const sellerListingListResponseSchema = {
         items: { type: 'array', items: sellerListingSchema },
         limit: { type: 'integer' },
         offset: { type: 'integer' },
+      },
+    },
+  },
+} as const;
+
+const listingCompletenessIssueSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'kind', 'path', 'message'],
+  properties: {
+    code: { type: 'string', minLength: 1 },
+    kind: { type: 'string', enum: ['seller_input', 'invalid_reference'] },
+    path: { type: 'string', minLength: 1 },
+    message: { type: 'string', minLength: 1 },
+    item: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['type', 'id'],
+      properties: {
+        type: { type: 'string', enum: ['sellable_variant', 'image'] },
+        id: { type: 'string', format: 'uuid' },
+      },
+    },
+  },
+} as const;
+
+export const sellerListingReadinessResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['listingId', 'draftRevision', 'ready', 'issues'],
+      properties: {
+        listingId: { type: 'string', format: 'uuid' },
+        draftRevision: { type: 'integer', minimum: 1 },
+        ready: { type: 'boolean' },
+        issues: {
+          type: 'array',
+          items: listingCompletenessIssueSchema,
+        },
       },
     },
   },

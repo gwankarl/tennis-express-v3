@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { chmod, mkdir, readFile, readdir, rename, rm, stat, unlink, utimes } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  utimes,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -242,6 +252,22 @@ export class PrivateListingImageFileStore {
   openStored(storageKey: string): Readable {
     this.assertUuid(storageKey);
     return createReadStream(this.objectPath(storageKey));
+  }
+
+  /** Returns false for a missing object and propagates other storage failures. */
+  async isStored(storageKey: string): Promise<boolean> {
+    this.assertUuid(storageKey);
+
+    try {
+      const file = await stat(this.objectPath(storageKey));
+      return file.isFile();
+    } catch (error) {
+      if (isMissingFile(error)) {
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   /** Deletes one object; repeated cleanup is safe if it is already missing. */
