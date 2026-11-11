@@ -17,10 +17,10 @@ export interface CatalogAttributeRule {
   maxItems?: number;
   pattern?: string;
   variantAllowed?: boolean;
-  requiredWhen?: {
+  requiredWhen?: readonly {
     field: string;
     equals: string | number;
-  };
+  }[];
 }
 
 const colorValues = [
@@ -68,7 +68,7 @@ const ruleSets = {
       required: false,
       allowedValues: ['L0', 'L1', 'L2', 'L3', 'L4', 'L5'],
       variantAllowed: true,
-      requiredWhen: { field: 'audience', equals: 'adult' },
+      requiredWhen: [{ field: 'audience', equals: 'adult' }],
     },
     {
       key: 'headSizeSquareInches',
@@ -309,25 +309,11 @@ const ruleSets = {
       required: false,
       maxItems: 50,
       maxLength: 120,
-      requiredWhen: { field: 'accessoryType', equals: 'grommet_set' },
-    },
-    {
-      key: 'compatibleRacquetModels',
-      label: 'Compatible racquet models',
-      type: 'string_array',
-      required: false,
-      maxItems: 50,
-      maxLength: 120,
-      requiredWhen: { field: 'accessoryType', equals: 'bumper_guard' },
-    },
-    {
-      key: 'compatibleRacquetModels',
-      label: 'Compatible racquet models',
-      type: 'string_array',
-      required: false,
-      maxItems: 50,
-      maxLength: 120,
-      requiredWhen: { field: 'accessoryType', equals: 'model_specific_other' },
+      requiredWhen: [
+        { field: 'accessoryType', equals: 'grommet_set' },
+        { field: 'accessoryType', equals: 'bumper_guard' },
+        { field: 'accessoryType', equals: 'model_specific_other' },
+      ],
     },
   ],
 } as const satisfies Record<CatalogAttributeRuleSetKey, readonly CatalogAttributeRule[]>;

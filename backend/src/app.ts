@@ -30,6 +30,7 @@ import { registerSellerApplicationEvidenceRoutes } from './modules/seller-onboar
 import { registerSellerApplicationEvidenceReadRoutes } from './modules/seller-onboarding/application-evidence-read.routes.js';
 import { registerSellerApplicationReviewRoutes } from './modules/seller-onboarding/review.routes.js';
 import { registerCatalogReferenceAdminRoutes } from './modules/catalog/catalog-reference-admin.routes.js';
+import { registerCatalogPublicRoutes } from './modules/catalog/catalog-public.routes.js';
 import { registerCatalogProductAdminRoutes } from './modules/catalog/product-admin.routes.js';
 
 declare module 'fastify' {
@@ -139,6 +140,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerSellerApplicationEvidenceRoutes(app);
     registerSellerApplicationEvidenceReadRoutes(app);
     registerSellerApplicationReviewRoutes(app);
+    registerCatalogPublicRoutes(app);
     registerCatalogReferenceAdminRoutes(app);
     registerCatalogProductAdminRoutes(app);
     registerAdminMfaRoutes(app);

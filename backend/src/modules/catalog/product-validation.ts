@@ -174,8 +174,8 @@ function normalizeValue(rule: CatalogAttributeRule, value: unknown, field: strin
 }
 
 function isRequired(rule: CatalogAttributeRule, attributes: Record<string, unknown>): boolean {
-  if (rule.requiredWhen) {
-    return attributes[rule.requiredWhen.field] === rule.requiredWhen.equals;
+  if (rule.requiredWhen?.length) {
+    return rule.requiredWhen.some(({ field, equals }) => attributes[field] === equals);
   }
 
   return rule.required;
