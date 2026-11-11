@@ -66,6 +66,79 @@ export const updateSellerListingDraftRequestSchema = {
   ],
 } as const;
 
+export const sellerListingVariantParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'variantId'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    variantId: { type: 'string', format: 'uuid' },
+  },
+} as const;
+
+export const patchSellerListingVariantRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedVersion'],
+  properties: {
+    expectedVersion: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+    priceXaf: { anyOf: [{ type: 'integer', minimum: 1, maximum: 2_147_483_647 }, { type: 'null' }] },
+    stockQuantity: { type: 'integer', minimum: 0, maximum: 2_147_483_647 },
+    sku: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 64,
+      pattern: '^\\s*[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\s*$',
+    },
+    isOfferedForSale: { type: 'boolean' },
+  },
+  anyOf: [
+    { required: ['priceXaf'] },
+    { required: ['stockQuantity'] },
+    { required: ['sku'] },
+    { required: ['isOfferedForSale'] },
+  ],
+} as const;
+
+export const sellerListingVariantResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'catalogVariantId',
+    'sku',
+    'priceXaf',
+    'stockQuantity',
+    'reservedQuantity',
+    'isOfferedForSale',
+    'version',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    catalogVariantId: { type: 'string', format: 'uuid' },
+    sku: { type: 'string', minLength: 1, maxLength: 64 },
+    priceXaf: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+    stockQuantity: { type: 'integer', minimum: 0 },
+    reservedQuantity: { type: 'integer', minimum: 0 },
+    isOfferedForSale: { type: 'boolean' },
+    version: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
+export const sellerListingVariantResponseEnvelopeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['variant'],
+      properties: { variant: sellerListingVariantResponseSchema },
+    },
+  },
+} as const;
+
 const listingDraftResponseSchema = {
   type: ['object', 'null'],
   additionalProperties: false,
@@ -73,6 +146,7 @@ const listingDraftResponseSchema = {
     'revision',
     'catalogProductId',
     'catalogVariantIds',
+    'sellableVariants',
     'title',
     'description',
     'condition',
@@ -85,6 +159,10 @@ const listingDraftResponseSchema = {
     catalogVariantIds: {
       type: 'array',
       items: { type: 'string', format: 'uuid' },
+    },
+    sellableVariants: {
+      type: 'array',
+      items: sellerListingVariantResponseSchema,
     },
     title: { type: ['string', 'null'] },
     description: { type: ['string', 'null'] },

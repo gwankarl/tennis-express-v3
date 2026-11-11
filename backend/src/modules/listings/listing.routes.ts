@@ -13,16 +13,27 @@ import {
   type UpdateSellerListingDraftInput,
 } from './listing.service.js';
 import {
+  patchSellerListingVariant,
+  type PatchSellerListingVariantInput,
+} from './listing-variant.service.js';
+import {
   createSellerListingRequestSchema,
+  patchSellerListingVariantRequestSchema,
   sellerListingIdParamsSchema,
   sellerListingListResponseSchema,
   sellerListingPaginationQuerySchema,
   sellerListingResponseSchema,
+  sellerListingVariantParamsSchema,
+  sellerListingVariantResponseEnvelopeSchema,
   updateSellerListingDraftRequestSchema,
 } from './listing.schema.js';
 
 interface ListingParams {
   id: string;
+}
+
+interface ListingVariantParams extends ListingParams {
+  variantId: string;
 }
 
 interface ListingQuery {
@@ -226,6 +237,56 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
         );
         const response: ApiSuccess<{ listing: typeof listing }> = {
           data: { listing },
+        };
+
+        return reply.code(200).send(response);
+      } catch (error) {
+        return sendServiceError(error, request, reply);
+      }
+    },
+  );
+
+  app.patch<{
+    Params: ListingVariantParams;
+    Body: PatchSellerListingVariantInput;
+  }>(
+    '/api/v1/seller/listings/:id/variants/:variantId',
+    {
+      preHandler: requireWorkspaceAccess('seller'),
+      schema: {
+        tags: ['Seller listings'],
+        summary: 'Update an owned sellable listing variant',
+        params: sellerListingVariantParamsSchema,
+        body: patchSellerListingVariantRequestSchema,
+        response: {
+          200: sellerListingVariantResponseEnvelopeSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+          500: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header('cache-control', 'private, no-store');
+
+      if (!app.db || !request.identitySession) {
+        return reply.code(503).send(requestError(request.id));
+      }
+
+      try {
+        const variant = await patchSellerListingVariant(
+          app.db,
+          request.identitySession.userId,
+          request.params.id,
+          request.params.variantId,
+          request.body,
+        );
+        const response: ApiSuccess<{ variant: typeof variant }> = {
+          data: { variant },
         };
 
         return reply.code(200).send(response);

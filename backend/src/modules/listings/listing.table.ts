@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
+  foreignKey,
   index,
   integer,
   pgEnum,
@@ -52,6 +54,7 @@ export const sellerListings = pgTable(
   },
   (table) => [
     index('seller_listings_seller_created_idx').on(table.sellerId, table.createdAt, table.id),
+    uniqueIndex('seller_listings_id_seller_id_uq').on(table.id, table.sellerId),
     index('seller_listings_status_updated_idx').on(table.status, table.updatedAt),
     check('seller_listings_control_revision_positive_ck', sql`${table.controlRevision} > 0`),
   ],
@@ -212,4 +215,98 @@ export const sellerListingApprovedRevisions = pgTable(
       .references(() => sellerListingRevisions.id, { onDelete: 'restrict' }),
   },
   (table) => [uniqueIndex('seller_listing_approved_revisions_revision_uq').on(table.revisionId)],
+);
+
+/**
+ * Stable seller-owned offer for one catalog configuration on a listing.
+ * Draft selection changes do not delete these records. Future reservation
+ * operations must update reservedQuantity transactionally under a row lock.
+ */
+export const sellerListingVariants = pgTable(
+  'seller_listing_variants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    listingId: uuid('listing_id').notNull(),
+    sellerId: uuid('seller_id').notNull(),
+    catalogVariantId: uuid('catalog_variant_id')
+      .notNull()
+      .references(() => catalogVariants.id, { onDelete: 'restrict' }),
+    sku: text('sku').notNull(),
+    priceXaf: integer('price_xaf'),
+    stockQuantity: integer('stock_quantity').notNull().default(0),
+    reservedQuantity: integer('reserved_quantity').notNull().default(0),
+    isOfferedForSale: boolean('is_offered_for_sale').notNull().default(false),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'seller_listing_variants_listing_seller_fk',
+      columns: [table.listingId, table.sellerId],
+      foreignColumns: [sellerListings.id, sellerListings.sellerId],
+    }).onDelete('cascade'),
+    uniqueIndex('seller_listing_variants_listing_catalog_variant_uq').on(
+      table.listingId,
+      table.catalogVariantId,
+    ),
+    uniqueIndex('seller_listing_variants_seller_sku_uq').on(table.sellerId, table.sku),
+    index('seller_listing_variants_catalog_variant_idx').on(table.catalogVariantId),
+    check(
+      'seller_listing_variants_sku_format_ck',
+      sql`${table.sku} = upper(btrim(${table.sku}))
+        AND ${table.sku} ~ '^[A-Z0-9][A-Z0-9._-]{0,63}$'`,
+    ),
+    check(
+      'seller_listing_variants_price_positive_ck',
+      sql`${table.priceXaf} IS NULL OR ${table.priceXaf} > 0`,
+    ),
+    check('seller_listing_variants_stock_nonnegative_ck', sql`${table.stockQuantity} >= 0`),
+    check(
+      'seller_listing_variants_reserved_range_ck',
+      sql`${table.reservedQuantity} >= 0
+        AND ${table.reservedQuantity} <= ${table.stockQuantity}`,
+    ),
+    check(
+      'seller_listing_variants_offer_price_ck',
+      sql`${table.isOfferedForSale} = false
+        OR ${table.priceXaf} IS NOT NULL`,
+    ),
+    check('seller_listing_variants_version_positive_ck', sql`${table.version} > 0`),
+  ],
+);
+
+/**
+ * Append-only record of seller price changes, including the first price set
+ * from an incomplete draft's unset price.
+ */
+export const sellerListingPriceHistory = pgTable(
+  'seller_listing_price_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    sellerListingVariantId: uuid('seller_listing_variant_id')
+      .notNull()
+      .references(() => sellerListingVariants.id, { onDelete: 'cascade' }),
+    previousPriceXaf: integer('previous_price_xaf'),
+    newPriceXaf: integer('new_price_xaf'),
+    changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('seller_listing_price_history_variant_changed_idx').on(
+      table.sellerListingVariantId,
+      table.changedAt,
+    ),
+    check(
+      'seller_listing_price_history_previous_price_ck',
+      sql`${table.previousPriceXaf} IS NULL OR ${table.previousPriceXaf} > 0`,
+    ),
+    check(
+      'seller_listing_price_history_new_price_ck',
+      sql`${table.newPriceXaf} IS NULL OR ${table.newPriceXaf} > 0`,
+    ),
+    check(
+      'seller_listing_price_history_changed_ck',
+      sql`${table.previousPriceXaf} IS DISTINCT FROM ${table.newPriceXaf}`,
+    ),
+  ],
 );

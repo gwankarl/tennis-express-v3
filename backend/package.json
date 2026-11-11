@@ -9,6 +9,8 @@
     "db:check": "tsx scripts/check-db.ts",
     "db:seed:catalog": "tsx scripts/seed-catalog.ts",
     "db:seed:catalog:test": "tsx scripts/seed-catalog.ts --test",
+    "db:backfill:listings": "tsx scripts/backfill-listing-variants.ts",
+    "db:backfill:listings:test": "npm run db:verify:test && tsx scripts/backfill-listing-variants.ts --test",
     "email:send-samples": "tsx scripts/send-email-samples.ts",
     "admin:operate": "tsx scripts/admin-operations.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import { catalogProducts } from '../catalog/product.table.js';
@@ -6,10 +7,12 @@ import {
   sellerListingApprovedRevisions,
   sellerListingDraftConfigurations,
   sellerListingDrafts,
+  sellerListingVariants,
   sellerListings,
 } from './listing.table.js';
 import {
   assertExpectedDraftRevision,
+  generateSellerSku,
   ListingValidationError,
   normalizeCatalogVariantIds,
   normalizeListingDraftFields,
@@ -46,10 +49,22 @@ export class SellerListingServiceError extends Error {
   }
 }
 
+export interface SellerListingVariantData {
+  id: string;
+  catalogVariantId: string;
+  sku: string;
+  priceXaf: number | null;
+  stockQuantity: number;
+  reservedQuantity: number;
+  isOfferedForSale: boolean;
+  version: number;
+}
+
 export interface SellerListingDraftData {
   revision: number;
   catalogProductId: string;
   catalogVariantIds: string[];
+  sellableVariants: SellerListingVariantData[];
   title: string | null;
   description: string | null;
   condition: SellerListingCondition | null;
@@ -74,7 +89,7 @@ function toListingData(
   listing: typeof sellerListings.$inferSelect,
   draft: typeof sellerListingDrafts.$inferSelect | null,
   approvedRevisionId: string | null,
-  catalogVariantIds: string[],
+  sellableVariants: SellerListingVariantData[],
 ): SellerListingData {
   return {
     id: listing.id,
@@ -88,7 +103,8 @@ function toListingData(
       ? {
           revision: draft.revision,
           catalogProductId: draft.catalogProductId,
-          catalogVariantIds,
+          catalogVariantIds: sellableVariants.map((variant) => variant.catalogVariantId),
+          sellableVariants,
           title: draft.title,
           description: draft.description,
           condition: draft.condition,
@@ -170,6 +186,144 @@ async function assertProductConfigurations(
   }
 }
 
+type ListingTransaction = Parameters<Parameters<ListingDatabase['transaction']>[0]>[0];
+
+async function loadDefaultConfigurationIds(
+  tx: ListingTransaction,
+  catalogProductId: string,
+): Promise<string[]> {
+  const [variant] = await tx
+    .select({ id: catalogVariants.id })
+    .from(catalogVariants)
+    .where(
+      and(eq(catalogVariants.productId, catalogProductId), eq(catalogVariants.isDefault, true)),
+    )
+    .for('key share')
+    .limit(1);
+
+  return variant ? [variant.id] : [];
+}
+
+function toSellerListingVariantData(
+  variant: typeof sellerListingVariants.$inferSelect,
+): SellerListingVariantData {
+  return {
+    id: variant.id,
+    catalogVariantId: variant.catalogVariantId,
+    sku: variant.sku,
+    priceXaf: variant.priceXaf,
+    stockQuantity: variant.stockQuantity,
+    reservedQuantity: variant.reservedQuantity,
+    isOfferedForSale: variant.isOfferedForSale,
+    version: variant.version,
+  };
+}
+
+/**
+ * Creates missing seller offers and returns the stable offer records for the
+ * selected configurations. Existing records, including their IDs and SKUs,
+ * are reused when a configuration is selected again.
+ */
+async function ensureSellerListingVariants(
+  tx: ListingTransaction,
+  listingId: string,
+  sellerId: string,
+  catalogVariantIds: readonly string[],
+): Promise<SellerListingVariantData[]> {
+  for (const catalogVariantId of catalogVariantIds) {
+    const id = randomUUID();
+
+    await tx
+      .insert(sellerListingVariants)
+      .values({
+        id,
+        listingId,
+        sellerId,
+        catalogVariantId,
+        sku: generateSellerSku(id),
+      })
+      .onConflictDoNothing({
+        target: [sellerListingVariants.listingId, sellerListingVariants.catalogVariantId],
+      });
+  }
+
+  if (catalogVariantIds.length === 0) {
+    return [];
+  }
+
+  const rows = await tx
+    .select()
+    .from(sellerListingVariants)
+    .where(
+      and(
+        eq(sellerListingVariants.listingId, listingId),
+        inArray(sellerListingVariants.catalogVariantId, [...catalogVariantIds]),
+      ),
+    );
+
+  const variantsByCatalogId = new Map(
+    rows.map((variant) => [variant.catalogVariantId, variant] as const),
+  );
+  const selectedVariants = catalogVariantIds.map((catalogVariantId) => {
+    const variant = variantsByCatalogId.get(catalogVariantId);
+
+    if (!variant) {
+      throw new SellerListingServiceError(409, 'catalogVariantIds', 'sellable_variant_unavailable');
+    }
+
+    return toSellerListingVariantData(variant);
+  });
+
+  return selectedVariants;
+}
+
+/** Loads selected sellable offers for a bounded set of seller listings. */
+async function loadSellableVariantsForListings(
+  db: ListingDatabase,
+  configurationsByListing: Map<string, string[]>,
+): Promise<Map<string, SellerListingVariantData[]>> {
+  const listingIds = [...configurationsByListing.keys()];
+
+  if (listingIds.length === 0) {
+    return new Map<string, SellerListingVariantData[]>();
+  }
+
+  const rows = await db
+    .select()
+    .from(sellerListingVariants)
+    .where(inArray(sellerListingVariants.listingId, listingIds));
+
+  const variantsByListing = new Map<
+    string,
+    Map<string, typeof sellerListingVariants.$inferSelect>
+  >();
+
+  for (const variant of rows) {
+    const variantsByCatalogId = variantsByListing.get(variant.listingId) ?? new Map();
+    variantsByCatalogId.set(variant.catalogVariantId, variant);
+    variantsByListing.set(variant.listingId, variantsByCatalogId);
+  }
+
+  const result = new Map<string, SellerListingVariantData[]>();
+
+  for (const [listingId, catalogVariantIds] of configurationsByListing) {
+    const variantsByCatalogId = variantsByListing.get(listingId) ?? new Map();
+    const selectedVariants = catalogVariantIds.map((catalogVariantId) => {
+      const variant = variantsByCatalogId.get(catalogVariantId);
+
+      if (!variant) {
+        throw new Error('A selected listing configuration has no sellable variant record.');
+      }
+
+      return toSellerListingVariantData(variant);
+    });
+
+    result.set(listingId, selectedVariants);
+  }
+
+  return result;
+}
+
 async function loadConfigurationIds(db: ListingDatabase, listingId: string): Promise<string[]> {
   const rows = await db
     .select({ catalogVariantId: sellerListingDraftConfigurations.catalogVariantId })
@@ -180,17 +334,21 @@ async function loadConfigurationIds(db: ListingDatabase, listingId: string): Pro
   return rows.map((row) => row.catalogVariantId);
 }
 
-/** Creates a listing and its initial incomplete draft atomically. */
+/** Creates a listing, its initial incomplete draft, and selected offers atomically. */
 export async function createSellerListing(
   db: ListingDatabase,
   sellerId: string,
   input: CreateSellerListingInput,
 ): Promise<SellerListingData> {
   const fields = normalizeFields(input);
-  const catalogVariantIds = normalizeVariantIds(input.catalogVariantIds) ?? [];
+  const requestedVariantIds = normalizeVariantIds(input.catalogVariantIds);
 
   return db.transaction(async (tx) => {
     await assertSelectableProduct(tx, input.catalogProductId);
+
+    const catalogVariantIds =
+      requestedVariantIds ?? (await loadDefaultConfigurationIds(tx, input.catalogProductId));
+
     await assertProductConfigurations(tx, input.catalogProductId, catalogVariantIds);
 
     const [listing] = await tx.insert(sellerListings).values({ sellerId }).returning();
@@ -225,7 +383,14 @@ export async function createSellerListing(
       );
     }
 
-    return toListingData(listing, draft, null, catalogVariantIds);
+    const sellableVariants = await ensureSellerListingVariants(
+      tx,
+      listing.id,
+      sellerId,
+      catalogVariantIds,
+    );
+
+    return toListingData(listing, draft, null, sellableVariants);
   });
 }
 
@@ -262,7 +427,11 @@ export async function listSellerListings(
             catalogVariantId: sellerListingDraftConfigurations.catalogVariantId,
           })
           .from(sellerListingDraftConfigurations)
-          .where(inArray(sellerListingDraftConfigurations.listingId, listingIds));
+          .where(inArray(sellerListingDraftConfigurations.listingId, listingIds))
+          .orderBy(
+            sellerListingDraftConfigurations.listingId,
+            sellerListingDraftConfigurations.catalogVariantId,
+          );
 
   const configurationsByListing = new Map<string, string[]>();
   for (const row of configurationRows) {
@@ -271,13 +440,18 @@ export async function listSellerListings(
     configurationsByListing.set(row.listingId, ids);
   }
 
+  const sellableVariantsByListing = await loadSellableVariantsForListings(
+    db,
+    configurationsByListing,
+  );
+
   return {
     items: rows.map((row) =>
       toListingData(
         row.listing,
         row.draft,
         row.approvedRevisionId,
-        configurationsByListing.get(row.listing.id) ?? [],
+        sellableVariantsByListing.get(row.listing.id) ?? [],
       ),
     ),
     ...pagination,
@@ -309,11 +483,17 @@ export async function getSellerListing(
     throw new SellerListingServiceError(404);
   }
 
+  const selectedConfigurationIds = row.draft ? await loadConfigurationIds(db, listingId) : [];
+  const sellableVariantsByListing = await loadSellableVariantsForListings(
+    db,
+    new Map([[listingId, selectedConfigurationIds]]),
+  );
+
   return toListingData(
     row.listing,
     row.draft,
     row.approvedRevisionId,
-    row.draft ? await loadConfigurationIds(db, listingId) : [],
+    sellableVariantsByListing.get(listingId) ?? [],
   );
 }
 
@@ -386,9 +566,10 @@ export async function updateSellerListingDraft(
             .orderBy(sellerListingDraftConfigurations.catalogVariantId)
         : [];
 
-    const nextVariantIds = productChanged
-      ? (requestedVariantIds ?? [])
-      : (requestedVariantIds ?? existingVariantIds.map((row) => row.catalogVariantId));
+    const nextVariantIds =
+      !productChanged && requestedVariantIds === undefined
+        ? existingVariantIds.map((row) => row.catalogVariantId)
+        : (requestedVariantIds ?? (await loadDefaultConfigurationIds(tx, nextProductId)));
 
     if (productChanged || requestedVariantIds !== undefined) {
       await assertSelectableProduct(tx, nextProductId);
@@ -433,12 +614,19 @@ export async function updateSellerListingDraft(
       }
     }
 
+    const sellableVariants = await ensureSellerListingVariants(
+      tx,
+      listingId,
+      sellerId,
+      nextVariantIds,
+    );
+
     const [approved] = await tx
       .select({ revisionId: sellerListingApprovedRevisions.revisionId })
       .from(sellerListingApprovedRevisions)
       .where(eq(sellerListingApprovedRevisions.listingId, listingId))
       .limit(1);
 
-    return toListingData(listing, updatedDraft, approved?.revisionId ?? null, nextVariantIds);
+    return toListingData(listing, updatedDraft, approved?.revisionId ?? null, sellableVariants);
   });
 }

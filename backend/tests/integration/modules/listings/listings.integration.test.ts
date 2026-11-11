@@ -16,6 +16,14 @@ import {
 import { catalogVariants } from '../../../../src/modules/catalog/variant.table.js';
 import { identityUsers } from '../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
+import {
+  sellerListingApprovedRevisions,
+  sellerListingPriceHistory,
+  sellerListingRevisionConfigurations,
+  sellerListingRevisions,
+  sellerListingVariants,
+  sellerListings,
+} from '../../../../src/modules/listings/listing.table.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
 import { sellerOperatingAccess } from '../../../../src/modules/seller-onboarding/review.table.js';
 import {
@@ -44,9 +52,21 @@ interface ListingDraft {
   revision: number;
   catalogProductId: string;
   catalogVariantIds: string[];
+  sellableVariants: SellableVariant[];
   title: string | null;
   description: string | null;
   condition: 'new' | 'like_new' | 'good' | 'fair' | null;
+}
+
+interface SellableVariant {
+  id: string;
+  catalogVariantId: string;
+  sku: string;
+  priceXaf: number | null;
+  stockQuantity: number;
+  reservedQuantity: number;
+  isOfferedForSale: boolean;
+  version: number;
 }
 
 interface ListingData {
@@ -164,6 +184,38 @@ async function createCatalogProductFixture(name: string) {
   return result;
 }
 
+async function createDefaultCatalogProductFixture(name: string) {
+  const [category] = await getDatabase()
+    .db.insert(catalogCategories)
+    .values({
+      slug: `listing-default-${runId}-${productIds.length + 1}`,
+      name: `Synthetic default category ${productIds.length + 1}`,
+      attributeRuleSetKey: 'tennis_racquets',
+    })
+    .returning({ id: catalogCategories.id });
+
+  if (!category) {
+    throw new Error('Could not create a synthetic default catalog category.');
+  }
+
+  categoryIds.push(category.id);
+
+  const result = await createCatalogProduct(getDatabase().db, {
+    categoryId: category.id,
+    brandId: null,
+    name,
+    isVisible: true,
+    fixedAttributes: {
+      audience: 'adult',
+      lengthInches: 27,
+      gripSize: 'L2',
+    },
+  });
+
+  productIds.push(result.product.id);
+  return result;
+}
+
 function request(
   seller: SellerFixture,
   method: 'GET' | 'POST' | 'PATCH',
@@ -182,6 +234,61 @@ function createListing(seller: SellerFixture, payload: Record<string, unknown> =
   return request(seller, 'POST', '/api/v1/seller/listings', {
     catalogProductId,
     ...payload,
+  });
+}
+
+function patchVariant(
+  seller: SellerFixture,
+  listingId: string,
+  variantId: string,
+  payload: Record<string, unknown>,
+) {
+  return request(
+    seller,
+    'PATCH',
+    `/api/v1/seller/listings/${listingId}/variants/${variantId}`,
+    payload,
+  );
+}
+
+async function addApprovedRevisionFixture(
+  listingId: string,
+  productId: string,
+  catalogVariantIds: readonly string[],
+): Promise<void> {
+  await getDatabase().db.transaction(async (tx) => {
+    const [revision] = await tx
+      .insert(sellerListingRevisions)
+      .values({
+        listingId,
+        revision: 1,
+        catalogProductId: productId,
+        title: 'Approved synthetic listing revision',
+        description: null,
+        condition: 'new',
+      })
+      .returning({ id: sellerListingRevisions.id });
+
+    if (!revision) {
+      throw new Error('Could not create the approved listing revision fixture.');
+    }
+
+    if (catalogVariantIds.length > 0) {
+      await tx.insert(sellerListingRevisionConfigurations).values(
+        catalogVariantIds.map((catalogVariantId) => ({
+          listingId,
+          revisionId: revision.id,
+          catalogProductId: productId,
+          catalogVariantId,
+        })),
+      );
+    }
+
+    await tx.insert(sellerListingApprovedRevisions).values({ listingId, revisionId: revision.id });
+    await tx
+      .update(sellerListings)
+      .set({ status: 'changes_requested' })
+      .where(eq(sellerListings.id, listingId));
   });
 }
 
@@ -234,9 +341,24 @@ describe('seller listing drafts', () => {
     });
     expect(unauthenticated.statusCode).toBe(401);
 
+    const unauthenticatedVariantUpdate = await getApp().inject({
+      method: 'PATCH',
+      url: `/api/v1/seller/listings/${randomUUID()}/variants/${randomUUID()}`,
+      payload: { expectedVersion: 1, stockQuantity: 1 },
+    });
+    expect(unauthenticatedVariantUpdate.statusCode).toBe(401);
+
     const ineligibleSeller = await createSeller(false);
     const denied = await request(ineligibleSeller, 'GET', '/api/v1/seller/listings');
     expect(denied.statusCode).toBe(403);
+
+    const deniedVariantUpdate = await patchVariant(
+      ineligibleSeller,
+      randomUUID(),
+      randomUUID(),
+      { expectedVersion: 1, stockQuantity: 1 },
+    );
+    expect(deniedVariantUpdate.statusCode).toBe(403);
   });
 
   it('creates an incomplete draft and returns the owned listing detail', async () => {
@@ -456,5 +578,252 @@ describe('seller listing drafts', () => {
       .where(eq(catalogVariants.id, referencedVariantId));
 
     expect(stillPresent).toHaveLength(1);
+  });
+
+  it('selects the single default catalog configuration when the draft omits selections', async () => {
+    const seller = await createSeller();
+    const product = await createDefaultCatalogProductFixture(`Default listing product ${runId}`);
+    const defaultConfiguration = product.variants[0];
+    expect(defaultConfiguration?.isDefault).toBe(true);
+
+    const response = await createListing(seller, { catalogProductId: product.product.id });
+
+    expect(response.statusCode, response.body).toBe(201);
+    const draft = response.json<ListingResponse>().data.listing.draft;
+    expect(draft?.catalogVariantIds).toEqual([defaultConfiguration?.id]);
+    expect(draft?.sellableVariants).toHaveLength(1);
+    expect(draft?.sellableVariants[0]).toMatchObject({
+      catalogVariantId: defaultConfiguration?.id,
+      priceXaf: null,
+      stockQuantity: 0,
+      reservedQuantity: 0,
+      isOfferedForSale: false,
+      version: 1,
+    });
+  });
+
+  it('creates and reuses stable sellable IDs as a draft changes configuration selection', async () => {
+    const seller = await createSeller();
+    const created = await createListing(seller, { catalogVariantIds });
+    expect(created.statusCode, created.body).toBe(201);
+    const initial = created.json<ListingResponse>().data.listing;
+    const initialByCatalogId = new Map(
+      initial.draft?.sellableVariants.map((variant) => [variant.catalogVariantId, variant]),
+    );
+    expect(initialByCatalogId.size).toBe(2);
+
+    const removeSecond = await request(
+      seller,
+      'PATCH',
+      `/api/v1/seller/listings/${initial.id}/draft`,
+      { expectedDraftRevision: 1, catalogVariantIds: [catalogVariantIds[0]!] },
+    );
+    expect(removeSecond.statusCode, removeSecond.body).toBe(200);
+    expect(removeSecond.json<ListingResponse>().data.listing.draft?.sellableVariants).toHaveLength(1);
+
+    const restore = await request(seller, 'PATCH', `/api/v1/seller/listings/${initial.id}/draft`, {
+      expectedDraftRevision: 2,
+      catalogVariantIds,
+    });
+    expect(restore.statusCode, restore.body).toBe(200);
+
+    const restored = restore.json<ListingResponse>().data.listing.draft?.sellableVariants ?? [];
+    for (const variant of restored) {
+      const original = initialByCatalogId.get(variant.catalogVariantId);
+      expect(variant.id).toBe(original?.id);
+      expect(variant.sku).toBe(original?.sku);
+    }
+
+    const retained = await getDatabase()
+      .db.select({ id: sellerListingVariants.id })
+      .from(sellerListingVariants)
+      .where(eq(sellerListingVariants.listingId, initial.id));
+    expect(retained).toHaveLength(2);
+  });
+
+  it('updates approved offers while content awaits review and blocks unapproved configurations', async () => {
+    const seller = await createSeller();
+    const created = await createListing(seller, { catalogVariantIds });
+    expect(created.statusCode, created.body).toBe(201);
+    const listing = created.json<ListingResponse>().data.listing;
+    const variants = listing.draft?.sellableVariants ?? [];
+    const approvedVariant = variants.find((variant) => variant.catalogVariantId === catalogVariantIds[0]);
+    const pendingVariant = variants.find((variant) => variant.catalogVariantId === catalogVariantIds[1]);
+    expect(approvedVariant).toBeDefined();
+    expect(pendingVariant).toBeDefined();
+
+    await addApprovedRevisionFixture(listing.id, catalogProductId, [catalogVariantIds[0]!]);
+
+    const approvedUpdate = await patchVariant(seller, listing.id, approvedVariant!.id, {
+      expectedVersion: 1,
+      priceXaf: 25_000,
+      stockQuantity: 6,
+      sku: '  racket-01  ',
+      isOfferedForSale: true,
+    });
+    expect(approvedUpdate.statusCode, approvedUpdate.body).toBe(200);
+    expect(approvedUpdate.json<{ data: { variant: SellableVariant } }>().data.variant).toMatchObject({
+      id: approvedVariant!.id,
+      sku: 'RACKET-01',
+      priceXaf: 25_000,
+      stockQuantity: 6,
+      isOfferedForSale: true,
+      version: 2,
+    });
+
+    const repriced = await patchVariant(seller, listing.id, approvedVariant!.id, {
+      expectedVersion: 2,
+      priceXaf: 26_000,
+    });
+    expect(repriced.statusCode, repriced.body).toBe(200);
+    expect(repriced.json<{ data: { variant: SellableVariant } }>().data.variant).toMatchObject({
+      priceXaf: 26_000,
+      version: 3,
+    });
+
+    const excludedUpdate = await patchVariant(seller, listing.id, pendingVariant!.id, {
+      expectedVersion: 1,
+      priceXaf: 12_000,
+      isOfferedForSale: true,
+    });
+    expect(excludedUpdate.statusCode).toBe(409);
+
+    const currentListing = await request(seller, 'GET', `/api/v1/seller/listings/${listing.id}`);
+    expect(currentListing.json<ListingResponse>().data.listing.status).toBe('changes_requested');
+
+    const history = await getDatabase()
+      .db.select()
+      .from(sellerListingPriceHistory)
+      .where(eq(sellerListingPriceHistory.sellerListingVariantId, approvedVariant!.id));
+    expect(history).toHaveLength(2);
+    expect(history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ previousPriceXaf: null, newPriceXaf: 25_000 }),
+        expect.objectContaining({ previousPriceXaf: 25_000, newPriceXaf: 26_000 }),
+      ]),
+    );
+  });
+
+  it('enforces seller-scoped SKU uniqueness, generic ownership 404s, and reservation-safe stock', async () => {
+    const seller = await createSeller();
+    const otherSeller = await createSeller();
+    const first = await createListing(seller, { catalogVariantIds: [catalogVariantIds[0]!] });
+    const second = await createListing(seller, { catalogVariantIds: [catalogVariantIds[0]!] });
+    const other = await createListing(otherSeller, { catalogVariantIds: [catalogVariantIds[0]!] });
+    const firstListing = first.json<ListingResponse>().data.listing;
+    const secondListing = second.json<ListingResponse>().data.listing;
+    const otherListing = other.json<ListingResponse>().data.listing;
+    const firstVariant = firstListing.draft!.sellableVariants[0]!;
+    const secondVariant = secondListing.draft!.sellableVariants[0]!;
+    const otherVariant = otherListing.draft!.sellableVariants[0]!;
+
+    const firstSku = await patchVariant(seller, firstListing.id, firstVariant.id, {
+      expectedVersion: 1,
+      sku: 'seller-sku-1',
+      stockQuantity: 4,
+    });
+    expect(firstSku.statusCode, firstSku.body).toBe(200);
+
+    const duplicateSku = await patchVariant(seller, secondListing.id, secondVariant.id, {
+      expectedVersion: 1,
+      sku: 'SELLER-SKU-1',
+    });
+    expect(duplicateSku.statusCode).toBe(409);
+
+    const sameSkuOtherSeller = await patchVariant(otherSeller, otherListing.id, otherVariant.id, {
+      expectedVersion: 1,
+      sku: 'seller-sku-1',
+    });
+    expect(sameSkuOtherSeller.statusCode, sameSkuOtherSeller.body).toBe(200);
+
+    const foreign = await patchVariant(otherSeller, firstListing.id, firstVariant.id, {
+      expectedVersion: 2,
+      stockQuantity: 10,
+    });
+    const foreignVariantOnOwnedListing = await patchVariant(
+      seller,
+      firstListing.id,
+      otherVariant.id,
+      { expectedVersion: 1, stockQuantity: 10 },
+    );
+    const unknownVariantOnOwnedListing = await patchVariant(
+      seller,
+      firstListing.id,
+      randomUUID(),
+      { expectedVersion: 1, stockQuantity: 10 },
+    );
+    const unknown = await patchVariant(otherSeller, randomUUID(), randomUUID(), {
+      expectedVersion: 1,
+      stockQuantity: 10,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(unknown.statusCode).toBe(404);
+    expect(foreign.json<{ error: unknown }>().error).toEqual(unknown.json<{ error: unknown }>().error);
+    expect(foreignVariantOnOwnedListing.statusCode).toBe(404);
+    expect(unknownVariantOnOwnedListing.statusCode).toBe(404);
+    expect(foreignVariantOnOwnedListing.json<{ error: unknown }>().error).toEqual(
+      unknownVariantOnOwnedListing.json<{ error: unknown }>().error,
+    );
+
+    await getDatabase()
+      .db.update(sellerListingVariants)
+      .set({ reservedQuantity: 2 })
+      .where(eq(sellerListingVariants.id, firstVariant.id));
+    const belowReservation = await patchVariant(seller, firstListing.id, firstVariant.id, {
+      expectedVersion: 2,
+      stockQuantity: 1,
+    });
+    expect(belowReservation.statusCode).toBe(409);
+
+    const unchanged = await getDatabase()
+      .db.select()
+      .from(sellerListingVariants)
+      .where(eq(sellerListingVariants.id, firstVariant.id));
+    expect(unchanged[0]).toMatchObject({ stockQuantity: 4, reservedQuantity: 2, version: 2 });
+  });
+
+  it('rejects invalid operational values and allows concurrent updates to separate variants', async () => {
+    const seller = await createSeller();
+    const created = await createListing(seller, { catalogVariantIds });
+    expect(created.statusCode, created.body).toBe(201);
+    const listing = created.json<ListingResponse>().data.listing;
+    const [first, second] = listing.draft!.sellableVariants;
+    expect(second).toBeDefined();
+
+    const invalidPrice = await patchVariant(seller, listing.id, first!.id, {
+      expectedVersion: 1,
+      priceXaf: 1.5,
+    });
+    const invalidStock = await patchVariant(seller, listing.id, first!.id, {
+      expectedVersion: 1,
+      stockQuantity: -1,
+    });
+    const unexpected = await patchVariant(seller, listing.id, first!.id, {
+      expectedVersion: 1,
+      reservedQuantity: 1,
+    });
+    for (const response of [invalidPrice, invalidStock, unexpected]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+    }
+
+    const separateVariantUpdates = await Promise.all([
+      patchVariant(seller, listing.id, first!.id, { expectedVersion: 1, priceXaf: 10_000 }),
+      patchVariant(seller, listing.id, second!.id, { expectedVersion: 1, priceXaf: 11_000 }),
+    ]);
+    expect(separateVariantUpdates.map((response) => response.statusCode)).toEqual([200, 200]);
+
+    const competingUpdates = await Promise.all([
+      patchVariant(seller, listing.id, first!.id, { expectedVersion: 2, stockQuantity: 2 }),
+      patchVariant(seller, listing.id, first!.id, { expectedVersion: 2, stockQuantity: 3 }),
+    ]);
+    expect(competingUpdates.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+
+    const after = await request(seller, 'GET', `/api/v1/seller/listings/${listing.id}`);
+    const finalFirst = after
+      .json<ListingResponse>()
+      .data.listing.draft?.sellableVariants.find((variant) => variant.id === first!.id);
+    expect(finalFirst?.version).toBe(3);
+    expect([2, 3]).toContain(finalFirst?.stockQuantity);
   });
 });
