@@ -9,3 +9,5 @@ export * from '../../modules/seller-onboarding/application-evidence.table.js';
 export * from '../../modules/seller-onboarding/review.table.js';
 export * from '../../modules/catalog/category.table.js';
 export * from '../../modules/catalog/brand.table.js';
+export * from '../../modules/catalog/product.table.js';
+export * from '../../modules/catalog/variant.table.js';
