@@ -33,6 +33,7 @@ import { registerCatalogReferenceAdminRoutes } from './modules/catalog/catalog-r
 import { registerCatalogPublicRoutes } from './modules/catalog/catalog-public.routes.js';
 import { registerCatalogProductAdminRoutes } from './modules/catalog/product-admin.routes.js';
 import { registerSellerListingRoutes } from './modules/listings/listing.routes.js';
+import type { PrivateListingImageFileStore } from './infrastructure/storage/private-listing-image-file-store.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -43,6 +44,7 @@ declare module 'fastify' {
     workspaceAuthorizationSources: WorkspaceAuthorizationSources;
     adminMfaConfig: import('./config/env.js').AdminMfaConfig | null;
     evidenceFileStore: PrivateEvidenceFileStore | null;
+    listingImageFileStore: PrivateListingImageFileStore | null;
   }
 }
 
@@ -53,6 +55,7 @@ export interface AppOptions {
   workspaceAuthorizationSources?: WorkspaceAuthorizationSources;
   adminMfa?: AdminMfaConfig;
   evidenceFileStore?: PrivateEvidenceFileStore;
+  listingImageFileStore?: PrivateListingImageFileStore;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -88,6 +91,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.decorate('emailSender', options.emailSender ?? null);
   app.decorate('frontendOrigin', options.frontendOrigin ?? 'http://127.0.0.1:5173');
   app.decorate('evidenceFileStore', options.evidenceFileStore ?? null);
+  app.decorate('listingImageFileStore', options.listingImageFileStore ?? null);
+
   app.decorate('workspaceAuthorizationSources', workspaceAuthorizationSources);
 
   if (options.database) {

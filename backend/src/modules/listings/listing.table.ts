@@ -129,6 +129,7 @@ export const sellerListingRevisions = pgTable(
   },
   (table) => [
     uniqueIndex('seller_listing_revisions_listing_revision_uq').on(table.listingId, table.revision),
+    uniqueIndex('seller_listing_revisions_listing_id_uq').on(table.listingId, table.id),
     uniqueIndex('seller_listing_revisions_listing_id_product_uq').on(
       table.listingId,
       table.id,
@@ -246,6 +247,7 @@ export const sellerListingVariants = pgTable(
       columns: [table.listingId, table.sellerId],
       foreignColumns: [sellerListings.id, sellerListings.sellerId],
     }).onDelete('cascade'),
+    uniqueIndex('seller_listing_variants_listing_id_uq').on(table.listingId, table.id),
     uniqueIndex('seller_listing_variants_listing_catalog_variant_uq').on(
       table.listingId,
       table.catalogVariantId,

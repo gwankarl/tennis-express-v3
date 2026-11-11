@@ -33,3 +33,38 @@ describe('seller evidence storage configuration', () => {
     }
   });
 });
+
+describe('seller listing image storage configuration', () => {
+  it('uses a separate private local directory by default', () => {
+    const config = parseEnv({ DATABASE_URL: databaseUrl });
+
+    expect(config.sellerListingImageStorageDirectory).toBe(
+      'C:/tx-private/tennis-xpress/listing-images',
+    );
+  });
+
+  it('accepts an absolute configured directory', () => {
+    const config = parseEnv({
+      DATABASE_URL: databaseUrl,
+      SELLER_LISTING_IMAGE_STORAGE_DIR: 'C:/private/tennis-xpress/listing-images',
+    });
+
+    expect(config.sellerListingImageStorageDirectory).toBe(
+      'C:/private/tennis-xpress/listing-images',
+    );
+  });
+
+  it('rejects a relative directory without exposing its value', () => {
+    try {
+      parseEnv({
+        DATABASE_URL: databaseUrl,
+        SELLER_LISTING_IMAGE_STORAGE_DIR: 'private/listing-images',
+      });
+      throw new Error('Expected environment parsing to reject the relative path.');
+    } catch (error) {
+      expect(error).toBeInstanceOf(EnvValidationError);
+      expect((error as EnvValidationError).setting).toBe('SELLER_LISTING_IMAGE_STORAGE_DIR');
+      expect((error as Error).message).not.toContain('private/listing-images');
+    }
+  });
+});

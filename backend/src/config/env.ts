@@ -30,6 +30,7 @@ export interface BackendConfig {
   host: string;
   port: number;
   databaseUrl: string;
+  sellerListingImageStorageDirectory: string;
   sellerEvidenceStorageDirectory: string;
   email: BackendEmailConfig;
   adminMfa?: AdminMfaConfig;
@@ -46,6 +47,7 @@ export type EnvSetting =
   | 'SMTP_USER'
   | 'SMTP_PASS'
   | 'EMAIL_FROM'
+  | 'SELLER_LISTING_IMAGE_STORAGE_DIR'
   | 'SELLER_EVIDENCE_STORAGE_DIR'
   | 'ADMIN_MFA_ENCRYPTION_KEY'
   | 'ADMIN_MFA_KEY_VERSION'
@@ -54,6 +56,7 @@ export type EnvSetting =
 const DEFAULT_FRONTEND_ORIGIN = 'http://127.0.0.1:5173';
 
 const DEFAULT_SELLER_EVIDENCE_STORAGE_DIRECTORY = 'C:/tx-private/tennis-xpress/evidence';
+const DEFAULT_SELLER_LISTING_IMAGE_STORAGE_DIRECTORY = 'C:/tx-private/tennis-xpress/listing-images';
 
 const BACKEND_ENV_KEYS = [
   'HOST',
@@ -71,6 +74,7 @@ const BACKEND_ENV_KEYS = [
   'ADMIN_MFA_ENCRYPTION_KEY',
   'ADMIN_MFA_KEY_VERSION',
   'ADMIN_MFA_ATTEMPT_HMAC_KEY',
+  'SELLER_LISTING_IMAGE_STORAGE_DIR',
   'SELLER_EVIDENCE_STORAGE_DIR',
 ] as const;
 
@@ -88,6 +92,13 @@ const baseSettingsSchema = z.object({
   SELLER_EVIDENCE_STORAGE_DIR: z
     .preprocess(
       (value: unknown) => (value === undefined ? DEFAULT_SELLER_EVIDENCE_STORAGE_DIRECTORY : value),
+      z.string().trim().min(1),
+    )
+    .refine(isAbsolute),
+  SELLER_LISTING_IMAGE_STORAGE_DIR: z
+    .preprocess(
+      (value: unknown) =>
+        value === undefined ? DEFAULT_SELLER_LISTING_IMAGE_STORAGE_DIRECTORY : value,
       z.string().trim().min(1),
     )
     .refine(isAbsolute),
@@ -174,6 +185,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
       port: base.PORT,
       databaseUrl: base.DATABASE_URL,
       sellerEvidenceStorageDirectory: base.SELLER_EVIDENCE_STORAGE_DIR,
+      sellerListingImageStorageDirectory: base.SELLER_LISTING_IMAGE_STORAGE_DIR,
       email: {
         enabled: false,
         frontendOrigin: DEFAULT_FRONTEND_ORIGIN,
@@ -189,6 +201,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): BackendConfig {
     port: base.PORT,
     databaseUrl: base.DATABASE_URL,
     sellerEvidenceStorageDirectory: base.SELLER_EVIDENCE_STORAGE_DIR,
+    sellerListingImageStorageDirectory: base.SELLER_LISTING_IMAGE_STORAGE_DIR,
     email: {
       enabled: true,
       frontendOrigin: smtp.FRONTEND_ORIGIN,
@@ -276,6 +289,8 @@ function getValidationMessage(setting: EnvSetting): string {
       return 'must not be blank';
     case 'SELLER_EVIDENCE_STORAGE_DIR':
       return 'must be an absolute path to a private evidence directory';
+    case 'SELLER_LISTING_IMAGE_STORAGE_DIR':
+      return 'must be an absolute path to a private listing image directory';
   }
 }
 

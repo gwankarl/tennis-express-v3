@@ -4,7 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import { createDatabaseClient, type DatabaseClient } from './infrastructure/database/client.js';
 import { createSmtpEmailSender } from './infrastructure/email/smtp-email-sender.js';
 import { PrivateEvidenceFileStore } from './infrastructure/storage/private-evidence-file-store.js';
+import { PrivateListingImageFileStore } from './infrastructure/storage/private-listing-image-file-store.js';
 import { sellerApplicationEvidence } from './modules/seller-onboarding/application-evidence.table.js';
+import { cleanupSellerListingImages } from './modules/listings/listing-image-read.service.js';
 
 function registerShutdownHandlers(app: FastifyInstance): void {
   let shuttingDown = false;
@@ -85,12 +87,19 @@ async function startServer(): Promise<void> {
       new Set(referencedEvidence.map(({ storageKey }) => storageKey)),
     );
 
+    const listingImageFileStore = new PrivateListingImageFileStore(
+      config.sellerListingImageStorageDirectory,
+    );
+    await listingImageFileStore.initialize();
+    await cleanupSellerListingImages(database.db, listingImageFileStore);
+
     app = buildApp({
       database,
       emailSender,
       frontendOrigin: config.email.frontendOrigin,
       adminMfa: config.adminMfa,
       evidenceFileStore,
+      listingImageFileStore,
     });
 
     database.pool.on('error', (error) => {

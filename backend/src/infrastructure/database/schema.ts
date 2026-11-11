@@ -12,3 +12,4 @@ export * from '../../modules/catalog/brand.table.js';
 export * from '../../modules/catalog/product.table.js';
 export * from '../../modules/catalog/variant.table.js';
 export * from '../../modules/listings/listing.table.js';
+export * from '../../modules/listings/listing-image.table.js';

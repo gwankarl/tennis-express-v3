@@ -66,6 +66,112 @@ export const updateSellerListingDraftRequestSchema = {
   ],
 } as const;
 
+export const sellerListingImageParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'imageId'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    imageId: { type: 'string', format: 'uuid' },
+  },
+} as const;
+
+export const sellerListingImageUploadQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedDraftRevision'],
+  properties: {
+    expectedDraftRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+  },
+} as const;
+
+const sellerListingImageAssignmentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['imageId', 'variantId', 'sortOrder', 'isCover'],
+  properties: {
+    imageId: { type: 'string', format: 'uuid' },
+    variantId: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
+    sortOrder: { type: 'integer', minimum: 0, maximum: 2_147_483_647 },
+    isCover: { type: 'boolean' },
+  },
+} as const;
+
+export const replaceSellerListingImageAssignmentsRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedDraftRevision', 'assignments'],
+  properties: {
+    expectedDraftRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+    assignments: { type: 'array', items: sellerListingImageAssignmentSchema },
+  },
+} as const;
+
+const sellerListingImageSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'mediaType', 'byteSize', 'width', 'height', 'assignments'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    mediaType: { type: 'string', enum: ['image/jpeg', 'image/png', 'image/webp'] },
+    byteSize: { type: 'integer', minimum: 1, maximum: 8_388_608 },
+    width: { type: 'integer', minimum: 320, maximum: 8000 },
+    height: { type: 'integer', minimum: 320, maximum: 8000 },
+    assignments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['variantId', 'sortOrder', 'isCover'],
+        properties: {
+          variantId: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
+          sortOrder: { type: 'integer', minimum: 0 },
+          isCover: { type: 'boolean' },
+        },
+      },
+    },
+  },
+} as const;
+
+const sellerListingImagesMutationResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['draftRevision', 'images'],
+      properties: {
+        draftRevision: { type: 'integer', minimum: 1 },
+        images: { type: 'array', items: sellerListingImageSchema },
+      },
+    },
+  },
+} as const;
+
+export const sellerListingImageUploadResponseSchema = sellerListingImagesMutationResponseSchema;
+
+export const sellerListingImageAssignmentsResponseSchema =
+  sellerListingImagesMutationResponseSchema;
+
+export const sellerListingImagesReadResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['draftRevision', 'images'],
+      properties: {
+        draftRevision: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+        images: { type: 'array', items: sellerListingImageSchema },
+      },
+    },
+  },
+} as const;
+
 export const sellerListingVariantParamsSchema = {
   type: 'object',
   additionalProperties: false,
@@ -82,7 +188,9 @@ export const patchSellerListingVariantRequestSchema = {
   required: ['expectedVersion'],
   properties: {
     expectedVersion: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
-    priceXaf: { anyOf: [{ type: 'integer', minimum: 1, maximum: 2_147_483_647 }, { type: 'null' }] },
+    priceXaf: {
+      anyOf: [{ type: 'integer', minimum: 1, maximum: 2_147_483_647 }, { type: 'null' }],
+    },
     stockQuantity: { type: 'integer', minimum: 0, maximum: 2_147_483_647 },
     sku: {
       type: 'string',
