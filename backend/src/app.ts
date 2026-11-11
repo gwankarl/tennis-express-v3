@@ -29,6 +29,8 @@ import {
 import { registerSellerApplicationEvidenceRoutes } from './modules/seller-onboarding/application-evidence.routes.js';
 import { registerSellerApplicationEvidenceReadRoutes } from './modules/seller-onboarding/application-evidence-read.routes.js';
 import { registerSellerApplicationReviewRoutes } from './modules/seller-onboarding/review.routes.js';
+import { registerCatalogReferenceAdminRoutes } from './modules/catalog/catalog-reference-admin.routes.js';
+import { registerCatalogProductAdminRoutes } from './modules/catalog/product-admin.routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -137,6 +139,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     registerSellerApplicationEvidenceRoutes(app);
     registerSellerApplicationEvidenceReadRoutes(app);
     registerSellerApplicationReviewRoutes(app);
+    registerCatalogReferenceAdminRoutes(app);
+    registerCatalogProductAdminRoutes(app);
     registerAdminMfaRoutes(app);
   });
 

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { catalogBrands } from './brand.table.js';
 import { catalogCategories } from './category.table.js';
 
@@ -14,6 +14,7 @@ export const catalogProducts = pgTable(
     brandId: uuid('brand_id').references(() => catalogBrands.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     description: text('description'),
+    isVisible: boolean('is_visible').notNull().default(false),
     fixedAttributes: jsonb('fixed_attributes')
       .$type<Record<string, unknown>>()
       .notNull()

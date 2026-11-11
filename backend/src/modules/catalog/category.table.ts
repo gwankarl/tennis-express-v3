@@ -22,6 +22,7 @@ export const catalogCategories = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
+    imageUrl: text('image_url'),
     attributeRuleSetKey: catalogAttributeRuleSet('attribute_rule_set_key').notNull(),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

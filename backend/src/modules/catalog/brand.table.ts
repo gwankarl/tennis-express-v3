@@ -7,6 +7,7 @@ export const catalogBrands = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
+    imageUrl: text('image_url'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
