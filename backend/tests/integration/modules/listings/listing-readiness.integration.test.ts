@@ -18,11 +18,20 @@ import { createCatalogProduct } from '../../../../src/modules/catalog/product.se
 import { identityUsers } from '../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import {
+  sellerListingApprovedRevisions,
   sellerListingDrafts,
+  sellerListingRevisionConfigurations,
+  sellerListingRevisionOffers,
   sellerListingRevisions,
+  sellerListingReviewOutcomes,
   sellerListingVariants,
   sellerListings,
 } from '../../../../src/modules/listings/listing.table.js';
+import {
+  sellerListingDraftImages,
+  sellerListingImages,
+  sellerListingRevisionImages,
+} from '../../../../src/modules/listings/listing-image.table.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
 import { sellerOperatingAccess } from '../../../../src/modules/seller-onboarding/review.table.js';
 import {
@@ -68,6 +77,9 @@ interface ListingResponse {
           isOfferedForSale: boolean;
           version: number;
         }>;
+        title: string | null;
+        description: string | null;
+        condition: 'new' | 'like_new' | 'good' | 'fair' | null;
       } | null;
     };
   };
@@ -85,6 +97,38 @@ interface ReadinessResponse {
       message: string;
       item?: { type: 'sellable_variant' | 'image'; id: string };
     }>;
+  };
+}
+
+interface SubmissionResponse {
+  data: {
+    listingId: string;
+    status: 'submitted';
+    approvedRevisionId: string | null;
+    pendingSubmission: {
+      id: string;
+      revision: number;
+      submittedAt: string;
+    };
+  };
+}
+
+interface ListingWorkflowDetailResponse {
+  data: {
+    listing: ListingResponse['data']['listing'] & {
+      pendingSubmission: {
+        revisionId: string;
+        revision: number;
+        submittedAt: string;
+      } | null;
+      latestReviewOutcome: {
+        revisionId: string;
+        revision: number;
+        decision: 'changes_requested' | 'rejected' | 'approved';
+        feedback: string | null;
+        reviewedAt: string;
+      } | null;
+    };
   };
 }
 
@@ -186,6 +230,45 @@ async function createListing(
   return response.json<ListingResponse>().data.listing;
 }
 
+async function createCompleteDraft(seller: SellerFixture) {
+  const listing = await createListing(seller, {
+    title: `Synthetic listing ${randomUUID()}`,
+    description: 'Synthetic complete listing for submission tests.',
+    condition: 'new',
+  });
+
+  const sellableVariant = listing.draft!.sellableVariants[0]!;
+  const priced = await request(
+    seller,
+    'PATCH',
+    `/api/v1/seller/listings/${listing.id}/variants/${sellableVariant.id}`,
+    {
+      expectedVersion: sellableVariant.version,
+      priceXaf: 25_000,
+    },
+  );
+  expect(priced.statusCode, priced.body).toBe(200);
+
+  const uploaded = await uploadCommonImage(
+    seller,
+    listing.id,
+    listing.draft!.revision,
+    await makePng(),
+  );
+  expect(uploaded.statusCode, uploaded.body).toBe(200);
+
+  const uploadData = uploaded.json<{
+    data: { draftRevision: number; images: Array<{ id: string }> };
+  }>().data;
+
+  return {
+    listing,
+    draftRevision: uploadData.draftRevision,
+    imageId: uploadData.images[0]!.id,
+    sellableVariantId: sellableVariant.id,
+  };
+}
+
 function multipartPayload(bytes: Buffer, boundary: string): Buffer {
   return Buffer.concat([
     Buffer.from(
@@ -260,6 +343,19 @@ afterAll(async () => {
   try {
     if (database && testDatabaseVerified) {
       if (fixtureUserIds.length > 0) {
+        // Revisions and review outcomes retain actor identities by RESTRICT;
+        // remove those synthetic audit references before cascading fixture users.
+        await database.pool.query(
+          `UPDATE seller_listing_revisions
+              SET submitted_by_user_id = NULL
+            WHERE submitted_by_user_id = ANY($1::uuid[])`,
+          [fixtureUserIds],
+        );
+        await database.pool.query(
+          `DELETE FROM seller_listing_review_outcomes
+            WHERE reviewer_user_id = ANY($1::uuid[])`,
+          [fixtureUserIds],
+        );
         await database.pool.query('DELETE FROM identity_users WHERE id = ANY($1::uuid[])', [
           fixtureUserIds,
         ]);
@@ -492,6 +588,452 @@ describe('seller listing readiness endpoint', () => {
       expect(response.json<{ error: { code: string } }>().error.code).toBe('INTERNAL_ERROR');
     } finally {
       await failingApp.close();
+    }
+  });
+
+  it('rejects an incomplete submission without changing the draft or creating a revision', async () => {
+    const seller = await createSeller();
+    const listing = await createListing(seller);
+
+    const response = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${listing.id}/submit`,
+      { expectedDraftRevision: listing.draft!.revision },
+    );
+
+    expect(response.statusCode, response.body).toBe(400);
+    const body = response.json<{
+      error: {
+        code: string;
+        details: Array<{ code: string; path: string; message: string }>;
+      };
+    }>();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.details.map((issue) => issue.path)).toContain('title');
+    expect(body.error.details.map((issue) => issue.code)).toContain('title_required');
+
+    const [currentListing] = await getDatabase()
+      .db.select({ status: sellerListings.status })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, listing.id));
+    const revisions = await getDatabase()
+      .db.select({ id: sellerListingRevisions.id })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.listingId, listing.id));
+
+    expect(currentListing?.status).toBe('draft');
+    expect(revisions).toHaveLength(0);
+  });
+
+  it('seals a complete revision, preserves an approved pointer, and rejects repeated or foreign submissions', async () => {
+    const seller = await createSeller();
+    const otherSeller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+
+    // Model a listing with a prior approved revision. Submission must leave
+    // this pointer alone while its new revision awaits review.
+    const [previousApproved] = await getDatabase()
+      .db.insert(sellerListingRevisions)
+      .values({
+        listingId: prepared.listing.id,
+        revision: 1,
+        catalogProductId,
+        submittedByUserId: seller.id,
+        title: 'Previously approved synthetic listing',
+        description: 'Historical approved content.',
+        condition: 'new',
+      })
+      .returning({ id: sellerListingRevisions.id });
+
+    expect(previousApproved).toBeDefined();
+    await getDatabase()
+      .db.insert(sellerListingApprovedRevisions)
+      .values({ listingId: prepared.listing.id, revisionId: previousApproved!.id });
+
+    const foreign = await request(
+      otherSeller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(foreign.statusCode).toBe(404);
+
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    const submission = submitted.json<SubmissionResponse>().data;
+    expect(submission).toMatchObject({
+      listingId: prepared.listing.id,
+      status: 'submitted',
+      approvedRevisionId: previousApproved!.id,
+      pendingSubmission: { revision: prepared.draftRevision },
+    });
+
+    const [sealedRevision] = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, submission.pendingSubmission.id));
+
+    expect(sealedRevision).toMatchObject({
+      listingId: prepared.listing.id,
+      revision: prepared.draftRevision,
+      catalogProductId,
+      submittedByUserId: seller.id,
+      title: prepared.listing.draft!.title,
+      condition: 'new',
+    });
+    expect(sealedRevision?.catalogSnapshot).toMatchObject({
+      product: { id: catalogProductId },
+      configurations: [
+        {
+          catalogVariantId,
+          sellableVariantId: prepared.sellableVariantId,
+          isDefault: true,
+        },
+      ],
+    });
+    expect(JSON.stringify(sealedRevision?.catalogSnapshot)).not.toContain('priceXaf');
+    expect(JSON.stringify(sealedRevision?.catalogSnapshot)).not.toContain('stockQuantity');
+    expect(JSON.stringify(sealedRevision?.catalogSnapshot)).not.toContain('"sku"');
+
+    const configurationRows = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionConfigurations)
+      .where(eq(sellerListingRevisionConfigurations.revisionId, submission.pendingSubmission.id));
+    const offerRows = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionOffers)
+      .where(eq(sellerListingRevisionOffers.revisionId, submission.pendingSubmission.id));
+    const imageRows = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionImages)
+      .where(eq(sellerListingRevisionImages.revisionId, submission.pendingSubmission.id));
+
+    expect(configurationRows.map((row) => row.catalogVariantId)).toEqual([catalogVariantId]);
+    expect(offerRows.map((row) => row.sellerListingVariantId)).toEqual([
+      prepared.sellableVariantId,
+    ]);
+    expect(imageRows).toHaveLength(1);
+    expect(imageRows[0]?.imageId).toBe(prepared.imageId);
+
+    const stale = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision - 1 },
+    );
+    const repeated = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    const editAfterSubmission = await request(
+      seller,
+      'PATCH',
+      `/api/v1/seller/listings/${prepared.listing.id}/draft`,
+      { expectedDraftRevision: prepared.draftRevision, title: 'Must remain read-only' },
+    );
+
+    expect(stale.statusCode).toBe(409);
+    expect(repeated.statusCode).toBe(409);
+    expect(editAfterSubmission.statusCode).toBe(409);
+
+    const detail = await request(seller, 'GET', `/api/v1/seller/listings/${prepared.listing.id}`);
+    expect(detail.statusCode, detail.body).toBe(200);
+    expect(detail.json<ListingWorkflowDetailResponse>().data.listing).toMatchObject({
+      status: 'submitted',
+      approvedRevisionId: previousApproved!.id,
+      pendingSubmission: {
+        revisionId: submission.pendingSubmission.id,
+        revision: prepared.draftRevision,
+      },
+      latestReviewOutcome: null,
+    });
+  });
+
+  it('copies a reviewed revision to a new draft and retains its files and outcome history', async () => {
+    const seller = await createSeller();
+    const reviewer = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    const submission = submitted.json<SubmissionResponse>().data;
+
+    const [listingBeforeReview] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    await getDatabase().db.insert(sellerListingReviewOutcomes).values({
+      listingId: prepared.listing.id,
+      revisionId: submission.pendingSubmission.id,
+      decision: 'changes_requested',
+      reviewerUserId: reviewer.id,
+      feedback: 'Please clarify the listing description.',
+    });
+    await getDatabase()
+      .db.update(sellerListings)
+      .set({
+        status: 'changes_requested',
+        controlRevision: listingBeforeReview!.controlRevision + 1,
+      })
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    const reviewDetail = await request(
+      seller,
+      'GET',
+      `/api/v1/seller/listings/${prepared.listing.id}`,
+    );
+    expect(reviewDetail.statusCode, reviewDetail.body).toBe(200);
+    expect(reviewDetail.json<ListingWorkflowDetailResponse>().data.listing).toMatchObject({
+      status: 'changes_requested',
+      pendingSubmission: null,
+      latestReviewOutcome: {
+        revisionId: submission.pendingSubmission.id,
+        decision: 'changes_requested',
+        feedback: 'Please clarify the listing description.',
+      },
+    });
+
+    const [listingForCorrection] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+    const correctionUrl = `/api/v1/seller/listings/${prepared.listing.id}/draft`;
+
+    const foreign = await request(reviewer, 'POST', correctionUrl, {
+      sourceRevisionId: submission.pendingSubmission.id,
+      expectedControlRevision: listingForCorrection!.controlRevision,
+    });
+    const stale = await request(seller, 'POST', correctionUrl, {
+      sourceRevisionId: submission.pendingSubmission.id,
+      expectedControlRevision: listingForCorrection!.controlRevision - 1,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(stale.statusCode).toBe(409);
+
+    const createdDraft = await request(seller, 'POST', correctionUrl, {
+      sourceRevisionId: submission.pendingSubmission.id,
+      expectedControlRevision: listingForCorrection!.controlRevision,
+    });
+    expect(createdDraft.statusCode, createdDraft.body).toBe(200);
+    expect(createdDraft.json<ListingResponse>().data.listing).toMatchObject({
+      status: 'draft',
+      draft: {
+        revision: prepared.draftRevision + 1,
+        catalogProductId,
+        catalogVariantIds: [catalogVariantId],
+        title: prepared.listing.draft!.title,
+        condition: 'new',
+      },
+    });
+
+    const duplicateDraft = await request(seller, 'POST', correctionUrl, {
+      sourceRevisionId: submission.pendingSubmission.id,
+      expectedControlRevision: listingForCorrection!.controlRevision + 1,
+    });
+    expect(duplicateDraft.statusCode).toBe(409);
+
+    const copiedDraftImages = await getDatabase()
+      .db.select()
+      .from(sellerListingDraftImages)
+      .where(eq(sellerListingDraftImages.listingId, prepared.listing.id));
+    const [imageRecord] = await getDatabase()
+      .db.select()
+      .from(sellerListingImages)
+      .where(eq(sellerListingImages.id, prepared.imageId));
+
+    expect(copiedDraftImages).toMatchObject([
+      { imageId: prepared.imageId, variantId: null, sortOrder: 0, isCover: true },
+    ]);
+    expect(imageRecord).toBeDefined();
+    expect(await getFileStore().isStored(imageRecord!.storageKey)).toBe(true);
+
+    const edited = await request(seller, 'PATCH', correctionUrl, {
+      expectedDraftRevision: prepared.draftRevision + 1,
+      title: 'Corrected synthetic listing',
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    const correctedRevision = edited.json<ListingResponse>().data.listing.draft!.revision;
+
+    const resubmitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: correctedRevision },
+    );
+    expect(resubmitted.statusCode, resubmitted.body).toBe(200);
+    expect(resubmitted.json<SubmissionResponse>().data.pendingSubmission.revision).toBe(
+      correctedRevision,
+    );
+
+    const history = await getDatabase()
+      .db.select({ revision: sellerListingRevisions.revision })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.listingId, prepared.listing.id))
+      .orderBy(sellerListingRevisions.revision);
+    expect(history.map((row) => row.revision)).toEqual([
+      prepared.draftRevision,
+      correctedRevision,
+    ]);
+
+    const retainedOutcome = await getDatabase()
+      .db.select({ decision: sellerListingReviewOutcomes.decision })
+      .from(sellerListingReviewOutcomes)
+      .where(eq(sellerListingReviewOutcomes.revisionId, submission.pendingSubmission.id));
+    expect(retainedOutcome[0]?.decision).toBe('changes_requested');
+  });
+
+  it('starts a correction draft from a rejected revision without changing its history', async () => {
+    const seller = await createSeller();
+    const reviewer = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    const submission = submitted.json<SubmissionResponse>().data;
+
+    const [beforeReview] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    await getDatabase().db.insert(sellerListingReviewOutcomes).values({
+      listingId: prepared.listing.id,
+      revisionId: submission.pendingSubmission.id,
+      decision: 'rejected',
+      reviewerUserId: reviewer.id,
+      feedback: 'The submitted product information cannot be approved.',
+    });
+    await getDatabase()
+      .db.update(sellerListings)
+      .set({
+        status: 'rejected',
+        controlRevision: beforeReview!.controlRevision + 1,
+      })
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    const [rejectedRevisionBefore] = await getDatabase()
+      .db.select({
+        title: sellerListingRevisions.title,
+        submittedAt: sellerListingRevisions.submittedAt,
+      })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, submission.pendingSubmission.id));
+    const [currentListing] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    const correction = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/draft`,
+      {
+        sourceRevisionId: submission.pendingSubmission.id,
+        expectedControlRevision: currentListing!.controlRevision,
+      },
+    );
+
+    expect(correction.statusCode, correction.body).toBe(200);
+    expect(correction.json<ListingResponse>().data.listing).toMatchObject({
+      status: 'draft',
+      draft: {
+        revision: prepared.draftRevision + 1,
+        title: prepared.listing.draft!.title,
+        catalogProductId,
+        catalogVariantIds: [catalogVariantId],
+      },
+    });
+
+    const [rejectedRevisionAfter] = await getDatabase()
+      .db.select({
+        title: sellerListingRevisions.title,
+        submittedAt: sellerListingRevisions.submittedAt,
+      })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, submission.pendingSubmission.id));
+    expect(rejectedRevisionAfter).toEqual(rejectedRevisionBefore);
+
+    const detail = await request(seller, 'GET', `/api/v1/seller/listings/${prepared.listing.id}`);
+    expect(detail.json<ListingWorkflowDetailResponse>().data.listing.latestReviewOutcome).toMatchObject({
+      revisionId: submission.pendingSubmission.id,
+      decision: 'rejected',
+      feedback: 'The submitted product information cannot be approved.',
+    });
+  });
+
+  it('allows only one concurrent submission for the same draft revision', async () => {
+    const seller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+    const url = `/api/v1/seller/listings/${prepared.listing.id}/submit`;
+
+    const responses = await Promise.all([
+      request(seller, 'POST', url, { expectedDraftRevision: prepared.draftRevision }),
+      request(seller, 'POST', url, { expectedDraftRevision: prepared.draftRevision }),
+    ]);
+
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+
+    const revisions = await getDatabase()
+      .db.select({ revision: sellerListingRevisions.revision })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.listingId, prepared.listing.id));
+    expect(revisions).toHaveLength(1);
+  });
+
+  it('serializes a draft edit against submission without losing either operation silently', async () => {
+    const seller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+    const listingUrl = `/api/v1/seller/listings/${prepared.listing.id}`;
+
+    const [edit, submit] = await Promise.all([
+      request(seller, 'PATCH', `${listingUrl}/draft`, {
+        expectedDraftRevision: prepared.draftRevision,
+        title: 'Concurrent edit wins only if submission has not sealed the draft',
+      }),
+      request(seller, 'POST', `${listingUrl}/submit`, {
+        expectedDraftRevision: prepared.draftRevision,
+      }),
+    ]);
+
+    expect([edit.statusCode, submit.statusCode].filter((status) => status === 200)).toHaveLength(1);
+    expect([edit.statusCode, submit.statusCode].filter((status) => status === 409)).toHaveLength(1);
+
+    const [current] = await getDatabase()
+      .db.select({ status: sellerListings.status })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+    const revisions = await getDatabase()
+      .db.select({ revision: sellerListingRevisions.revision })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.listingId, prepared.listing.id));
+
+    if (submit.statusCode === 200) {
+      expect(current?.status).toBe('submitted');
+      expect(edit.statusCode).toBe(409);
+      expect(revisions).toHaveLength(1);
+    } else {
+      expect(current?.status).toBe('draft');
+      expect(submit.statusCode).toBe(409);
+      expect(revisions).toHaveLength(0);
     }
   });
 });

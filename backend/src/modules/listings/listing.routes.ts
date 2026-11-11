@@ -34,12 +34,24 @@ import {
 } from './listing-image-read.service.js';
 import { getSellerListingReadiness } from './listing-readiness.service.js';
 import {
+  createSellerListingCorrectionDraft,
+  getSellerListingWorkflowDetail,
+  type CreateSellerListingCorrectionDraftInput,
+} from './listing-workflow.service.js';
+import {
+  ListingSubmissionIncompleteError,
+  submitSellerListing,
+  type SubmitSellerListingInput,
+} from './listing-submission.service.js';
+import {
   createSellerListingRequestSchema,
+  createSellerListingCorrectionDraftRequestSchema,
   patchSellerListingVariantRequestSchema,
   sellerListingIdParamsSchema,
   sellerListingListResponseSchema,
   sellerListingPaginationQuerySchema,
   sellerListingResponseSchema,
+  sellerListingDetailResponseSchema,
   sellerListingVariantParamsSchema,
   sellerListingVariantResponseEnvelopeSchema,
   updateSellerListingDraftRequestSchema,
@@ -50,6 +62,8 @@ import {
   sellerListingImageUploadResponseSchema,
   sellerListingImagesReadResponseSchema,
   sellerListingReadinessResponseSchema,
+  submitSellerListingRequestSchema,
+  submitSellerListingResponseSchema,
 } from './listing.schema.js';
 
 interface ListingImageParams extends ListingParams {
@@ -129,6 +143,25 @@ function sendServiceError(
   request: FastifyRequest,
   reply: FastifyReply,
 ): FastifyReply {
+  if (error instanceof ListingSubmissionIncompleteError) {
+    return reply.code(400).send({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Listing is incomplete',
+        details: error.issues.map((issue) => ({
+          field: issue.path,
+          rule: issue.code,
+          code: issue.code,
+          path: issue.path,
+          kind: issue.kind,
+          message: issue.message,
+          ...(issue.item ? { item: issue.item } : {}),
+        })),
+      },
+      requestId: request.id,
+    } satisfies ApiErrorResponse);
+  }
+
   if (!(error instanceof SellerListingServiceError)) {
     throw error;
   }
@@ -240,7 +273,7 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
         summary: 'Get an owned seller listing',
         params: sellerListingIdParamsSchema,
         response: {
-          200: sellerListingResponseSchema,
+          200: sellerListingDetailResponseSchema,
           401: apiErrorResponseSchema,
           403: apiErrorResponseSchema,
           404: apiErrorResponseSchema,
@@ -257,16 +290,110 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
       }
 
       try {
+        const detail = await getSellerListingWorkflowDetail(
+          app.db,
+          request.identitySession.userId,
+          request.params.id,
+        );
+        const response: ApiSuccess<typeof detail> = { data: detail };
+
+        return reply.code(200).send(response);
+      } catch (error) {
+        return sendServiceError(error, request, reply);
+      }
+    },
+  );
+
+  app.post<{
+    Params: ListingParams;
+    Body: CreateSellerListingCorrectionDraftInput;
+  }>(
+    '/api/v1/seller/listings/:id/draft',
+    {
+      preHandler: requireWorkspaceAccess('seller'),
+      schema: {
+        tags: ['Seller listings'],
+        summary: 'Start a correction draft from a reviewed revision',
+        params: sellerListingIdParamsSchema,
+        body: createSellerListingCorrectionDraftRequestSchema,
+        response: {
+          200: sellerListingResponseSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+          500: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header('cache-control', 'private, no-store');
+
+      if (!app.db || !request.identitySession) {
+        return reply.code(503).send(requestError(request.id));
+      }
+
+      try {
+        await createSellerListingCorrectionDraft(
+          app.db,
+          request.identitySession.userId,
+          request.params.id,
+          request.body,
+        );
+
         const listing = await getSellerListing(
           app.db,
           request.identitySession.userId,
           request.params.id,
         );
-        const response: ApiSuccess<{ listing: typeof listing }> = {
-          data: { listing },
-        };
 
-        return reply.code(200).send(response);
+        return reply.code(200).send({ data: { listing } });
+      } catch (error) {
+        return sendServiceError(error, request, reply);
+      }
+    },
+  );
+
+  app.post<{ Params: ListingParams; Body: SubmitSellerListingInput }>(
+    '/api/v1/seller/listings/:id/submit',
+    {
+      preHandler: requireWorkspaceAccess('seller'),
+      schema: {
+        tags: ['Seller listings'],
+        summary: 'Submit a complete seller listing draft for review',
+        params: sellerListingIdParamsSchema,
+        body: submitSellerListingRequestSchema,
+        response: {
+          200: submitSellerListingResponseSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+          500: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header('cache-control', 'private, no-store');
+
+      if (!app.db || !app.listingImageFileStore || !request.identitySession) {
+        return reply.code(503).send(requestError(request.id));
+      }
+
+      try {
+        const data = await submitSellerListing(
+          app.db,
+          app.listingImageFileStore,
+          request.identitySession.userId,
+          request.params.id,
+          request.body,
+        );
+
+        return reply.code(200).send({ data });
       } catch (error) {
         return sendServiceError(error, request, reply);
       }

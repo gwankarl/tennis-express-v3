@@ -16,6 +16,14 @@ export interface ApiSuccess<T> {
 export interface ApiErrorDetail {
   field: string;
   rule: string;
+  code?: string;
+  path?: string;
+  kind?: string;
+  message?: string;
+  item?: {
+    type: string;
+    id: string;
+  };
 }
 
 export interface ApiErrorResponse {
@@ -48,6 +56,19 @@ export const apiErrorResponseSchema = {
             properties: {
               field: { type: 'string' },
               rule: { type: 'string' },
+              code: { type: 'string' },
+              path: { type: 'string' },
+              kind: { type: 'string' },
+              message: { type: 'string' },
+              item: {
+                type: 'object',
+                required: ['type', 'id'],
+                properties: {
+                  type: { type: 'string' },
+                  id: { type: 'string' },
+                },
+                additionalProperties: false,
+              },
             },
             additionalProperties: false,
           },

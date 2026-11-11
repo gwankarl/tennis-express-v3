@@ -324,6 +324,78 @@ export const sellerListingResponseSchema = {
   },
 } as const;
 
+const sellerListingDetailSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    ...sellerListingSchema.required,
+    'pendingSubmission',
+    'latestReviewOutcome',
+  ],
+  properties: {
+    ...sellerListingSchema.properties,
+    pendingSubmission: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['revisionId', 'revision', 'submittedAt'],
+          properties: {
+            revisionId: { type: 'string', format: 'uuid' },
+            revision: { type: 'integer', minimum: 1 },
+            submittedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        { type: 'null' },
+      ],
+    },
+    latestReviewOutcome: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['revisionId', 'revision', 'decision', 'feedback', 'reviewedAt'],
+          properties: {
+            revisionId: { type: 'string', format: 'uuid' },
+            revision: { type: 'integer', minimum: 1 },
+            decision: {
+              type: 'string',
+              enum: ['changes_requested', 'rejected', 'approved'],
+            },
+            feedback: { type: ['string', 'null'] },
+            reviewedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        { type: 'null' },
+      ],
+    },
+  },
+} as const;
+
+export const sellerListingDetailResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['listing'],
+      properties: { listing: sellerListingDetailSchema },
+    },
+  },
+} as const;
+
+export const createSellerListingCorrectionDraftRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sourceRevisionId', 'expectedControlRevision'],
+  properties: {
+    sourceRevisionId: { type: 'string', format: 'uuid' },
+    expectedControlRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+  },
+} as const;
+
 export const sellerListingListResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -379,6 +451,43 @@ export const sellerListingReadinessResponseSchema = {
         issues: {
           type: 'array',
           items: listingCompletenessIssueSchema,
+        },
+      },
+    },
+  },
+} as const;
+
+export const submitSellerListingRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedDraftRevision'],
+  properties: {
+    expectedDraftRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+  },
+} as const;
+
+export const submitSellerListingResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['listingId', 'status', 'approvedRevisionId', 'pendingSubmission'],
+      properties: {
+        listingId: { type: 'string', format: 'uuid' },
+        status: { type: 'string', enum: ['submitted'] },
+        approvedRevisionId: { type: ['string', 'null'], format: 'uuid' },
+        pendingSubmission: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'revision', 'submittedAt'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            revision: { type: 'integer', minimum: 1 },
+            submittedAt: { type: 'string', format: 'date-time' },
+          },
         },
       },
     },

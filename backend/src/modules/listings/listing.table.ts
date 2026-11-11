@@ -5,6 +5,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -107,6 +108,40 @@ export const sellerListingDrafts = pgTable(
 );
 
 /**
+ * Catalog presentation captured when a listing revision is submitted.
+ * Operational offer values such as price, stock, SKU, and offer state are
+ * deliberately excluded.
+ */
+export interface SellerListingCatalogSnapshot {
+  category: {
+    id: string;
+    slug: string;
+    name: string;
+    attributeRuleSetKey: string;
+    imageUrl: string | null;
+  };
+  brand: {
+    id: string;
+    slug: string;
+    name: string;
+    imageUrl: string | null;
+  } | null;
+  product: {
+    id: string;
+    name: string;
+    description: string | null;
+    fixedAttributes: Record<string, unknown>;
+    variantOptionKeys: string[];
+  };
+  configurations: Array<{
+    catalogVariantId: string;
+    sellableVariantId: string;
+    optionValues: Record<string, unknown>;
+    isDefault: boolean;
+  }>;
+}
+
+/**
  * Immutable snapshot shape for a submitted draft. No rows are created until
  * the later submission workflow seals a complete draft.
  */
@@ -121,6 +156,10 @@ export const sellerListingRevisions = pgTable(
     catalogProductId: uuid('catalog_product_id')
       .notNull()
       .references(() => catalogProducts.id, { onDelete: 'restrict' }),
+    submittedByUserId: uuid('submitted_by_user_id').references(() => identityUsers.id, {
+      onDelete: 'restrict',
+    }),
+    catalogSnapshot: jsonb('catalog_snapshot').$type<SellerListingCatalogSnapshot>(),
     title: text('title').notNull(),
     description: text('description'),
     condition: sellerListingCondition('condition').notNull(),
@@ -136,6 +175,10 @@ export const sellerListingRevisions = pgTable(
       table.catalogProductId,
     ),
     check('seller_listing_revisions_revision_positive_ck', sql`${table.revision} > 0`),
+    check(
+      'seller_listing_revisions_catalog_snapshot_object_ck',
+      sql`${table.catalogSnapshot} IS NULL OR jsonb_typeof(${table.catalogSnapshot}) = 'object'`,
+    ),
     check(
       'seller_listing_revisions_title_ck',
       sql`btrim(${table.title}) <> '' AND char_length(${table.title}) <= 120`,
@@ -198,6 +241,11 @@ export const sellerListingRevisionConfigurations = pgTable(
       name: 'seller_listing_revision_configurations_pk',
       columns: [table.revisionId, table.catalogVariantId],
     }),
+    uniqueIndex('seller_listing_revision_configurations_listing_revision_variant_uq').on(
+      table.listingId,
+      table.revisionId,
+      table.catalogVariantId,
+    ),
   ],
 );
 
@@ -248,6 +296,11 @@ export const sellerListingVariants = pgTable(
       foreignColumns: [sellerListings.id, sellerListings.sellerId],
     }).onDelete('cascade'),
     uniqueIndex('seller_listing_variants_listing_id_uq').on(table.listingId, table.id),
+    uniqueIndex('seller_listing_variants_listing_id_variant_catalog_uq').on(
+      table.listingId,
+      table.id,
+      table.catalogVariantId,
+    ),
     uniqueIndex('seller_listing_variants_listing_catalog_variant_uq').on(
       table.listingId,
       table.catalogVariantId,
@@ -309,6 +362,86 @@ export const sellerListingPriceHistory = pgTable(
     check(
       'seller_listing_price_history_changed_ck',
       sql`${table.previousPriceXaf} IS DISTINCT FROM ${table.newPriceXaf}`,
+    ),
+  ],
+);
+
+/**
+ * Stable seller offer identities selected in one immutable submitted revision.
+ * Price, stock, SKU, and offer state remain on sellerListingVariants.
+ */
+export const sellerListingRevisionOffers = pgTable(
+  'seller_listing_revision_offers',
+  {
+    listingId: uuid('listing_id').notNull(),
+    revisionId: uuid('revision_id').notNull(),
+    catalogVariantId: uuid('catalog_variant_id').notNull(),
+    sellerListingVariantId: uuid('seller_listing_variant_id').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'seller_listing_revision_offers_pk',
+      columns: [table.revisionId, table.catalogVariantId],
+    }),
+    uniqueIndex('seller_listing_revision_offers_revision_offer_uq').on(
+      table.revisionId,
+      table.sellerListingVariantId,
+    ),
+    foreignKey({
+      name: 'seller_listing_revision_offers_configuration_fk',
+      columns: [table.listingId, table.revisionId, table.catalogVariantId],
+      foreignColumns: [
+        sellerListingRevisionConfigurations.listingId,
+        sellerListingRevisionConfigurations.revisionId,
+        sellerListingRevisionConfigurations.catalogVariantId,
+      ],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'seller_listing_revision_offers_variant_fk',
+      columns: [table.listingId, table.sellerListingVariantId, table.catalogVariantId],
+      foreignColumns: [
+        sellerListingVariants.listingId,
+        sellerListingVariants.id,
+        sellerListingVariants.catalogVariantId,
+      ],
+    }).onDelete('restrict'),
+  ],
+);
+
+/**
+ * Seller-readable review outcome and feedback for an immutable submitted
+ * revision. Section 9 will write these records through its review workflow.
+ */
+export const sellerListingReviewOutcomes = pgTable(
+  'seller_listing_review_outcomes',
+  {
+    revisionId: uuid('revision_id').primaryKey(),
+    listingId: uuid('listing_id').notNull(),
+    decision: text('decision').notNull(),
+    reviewerUserId: uuid('reviewer_user_id')
+      .notNull()
+      .references(() => identityUsers.id, { onDelete: 'restrict' }),
+    feedback: text('feedback'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'seller_listing_review_outcomes_revision_fk',
+      columns: [table.listingId, table.revisionId],
+      foreignColumns: [sellerListingRevisions.listingId, sellerListingRevisions.id],
+    }).onDelete('cascade'),
+    index('seller_listing_review_outcomes_listing_reviewed_idx').on(
+      table.listingId,
+      table.reviewedAt,
+    ),
+    check(
+      'seller_listing_review_outcomes_decision_ck',
+      sql`${table.decision} IN ('changes_requested', 'rejected', 'approved')`,
+    ),
+    check(
+      'seller_listing_review_outcomes_feedback_required_ck',
+      sql`${table.decision} = 'approved'
+        OR (${table.feedback} IS NOT NULL AND btrim(${table.feedback}) <> '')`,
     ),
   ],
 );
