@@ -15,10 +15,7 @@ import {
   normalizeSellerListingVariantOperationalFields,
   type SellerListingVariantOperationalFields,
 } from './listing.validation.js';
-import {
-  SellerListingServiceError,
-  type SellerListingVariantData,
-} from './listing.service.js';
+import { SellerListingServiceError, type SellerListingVariantData } from './listing.service.js';
 
 type ListingDatabase = DatabaseClient['db'];
 
@@ -26,7 +23,9 @@ export interface PatchSellerListingVariantInput extends SellerListingVariantOper
   expectedVersion: number;
 }
 
-function toVariantData(variant: typeof sellerListingVariants.$inferSelect): SellerListingVariantData {
+function toVariantData(
+  variant: typeof sellerListingVariants.$inferSelect,
+): SellerListingVariantData {
   return {
     id: variant.id,
     catalogVariantId: variant.catalogVariantId,
@@ -170,8 +169,7 @@ export async function patchSellerListingVariant(
       const nextStockQuantity =
         fields.stockQuantity === undefined ? variant.stockQuantity : fields.stockQuantity;
       const nextSku = fields.sku ?? variant.sku;
-      const nextIsOfferedForSale =
-        fields.isOfferedForSale ?? variant.isOfferedForSale;
+      const nextIsOfferedForSale = fields.isOfferedForSale ?? variant.isOfferedForSale;
 
       try {
         assertStockCoversReservations(nextStockQuantity, variant.reservedQuantity);

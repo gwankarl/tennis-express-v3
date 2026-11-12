@@ -846,10 +846,8 @@ export function evaluateListingCompleteness(
     );
   }
 
-  let productState: ReturnType<typeof validateCatalogProduct> | null = null;
-
   if (input.catalogProduct) {
-    productState = validateCatalogProduct(input.catalogProduct, issues);
+    const productState = validateCatalogProduct(input.catalogProduct, issues);
     validateSelectedConfigurations(input, input.catalogProduct, productState, issues);
   }
 

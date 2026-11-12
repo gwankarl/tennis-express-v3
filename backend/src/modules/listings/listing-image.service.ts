@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import type {
   PrivateListingImageFileStore,
@@ -241,12 +241,7 @@ export async function uploadSellerListingImage(
 
   try {
     return await db.transaction(async (tx) => {
-      const { draft } = await lockEditableDraft(
-        tx,
-        input.sellerId,
-        input.listingId,
-        input.expectedDraftRevision,
-      );
+      await lockEditableDraft(tx, input.sellerId, input.listingId, input.expectedDraftRevision);
 
       const currentRows = await tx
         .select({ imageId: sellerListingDraftImages.imageId })

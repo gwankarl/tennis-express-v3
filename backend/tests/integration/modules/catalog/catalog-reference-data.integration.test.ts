@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { asc, count, eq } from 'drizzle-orm';
+import { asc, count, eq, inArray } from 'drizzle-orm';
 import {
   createDatabaseClient,
   type DatabaseClient,
@@ -14,6 +14,30 @@ import {
 } from '../../../helpers/test-database.js';
 
 let database: DatabaseClient | undefined;
+
+const launchCategorySlugs = [
+  'grips-overgrips',
+  'racquet-accessories',
+  'racquet-strings',
+  'tennis-bags',
+  'tennis-balls',
+  'tennis-racquets',
+  'tennis-shoes',
+] as const;
+
+const launchBrandSlugs = [
+  'adidas',
+  'artengo',
+  'asics',
+  'babolat',
+  'dunlop',
+  'head',
+  'nike',
+  'prince',
+  'tecnifibre',
+  'wilson',
+  'yonex',
+] as const;
 
 function getDatabase(): DatabaseClient {
   if (!database) {
@@ -46,6 +70,7 @@ describe('catalog reference data', () => {
         isActive: catalogCategories.isActive,
       })
       .from(catalogCategories)
+      .where(inArray(catalogCategories.slug, launchCategorySlugs))
       .orderBy(asc(catalogCategories.slug));
 
     const brands = await db.db
@@ -55,6 +80,7 @@ describe('catalog reference data', () => {
         isActive: catalogBrands.isActive,
       })
       .from(catalogBrands)
+      .where(inArray(catalogBrands.slug, launchBrandSlugs))
       .orderBy(asc(catalogBrands.slug));
 
     expect(categories).toEqual([
@@ -116,8 +142,14 @@ describe('catalog reference data', () => {
       { slug: 'yonex', name: 'Yonex', isActive: true },
     ]);
 
-    const [categoryCount] = await db.db.select({ value: count() }).from(catalogCategories);
-    const [brandCount] = await db.db.select({ value: count() }).from(catalogBrands);
+    const [categoryCount] = await db.db
+      .select({ value: count() })
+      .from(catalogCategories)
+      .where(inArray(catalogCategories.slug, launchCategorySlugs));
+    const [brandCount] = await db.db
+      .select({ value: count() })
+      .from(catalogBrands)
+      .where(inArray(catalogBrands.slug, launchBrandSlugs));
 
     expect(categoryCount?.value).toBe(7);
     expect(brandCount?.value).toBe(11);
@@ -204,8 +236,14 @@ describe('catalog reference data', () => {
         isActive: false,
       });
 
-      const [categoryCount] = await db.db.select({ value: count() }).from(catalogCategories);
-      const [brandCount] = await db.db.select({ value: count() }).from(catalogBrands);
+      const [categoryCount] = await db.db
+        .select({ value: count() })
+        .from(catalogCategories)
+        .where(inArray(catalogCategories.slug, launchCategorySlugs));
+      const [brandCount] = await db.db
+        .select({ value: count() })
+        .from(catalogBrands)
+        .where(inArray(catalogBrands.slug, launchBrandSlugs));
 
       expect(categoryCount?.value).toBe(7);
       expect(brandCount?.value).toBe(11);

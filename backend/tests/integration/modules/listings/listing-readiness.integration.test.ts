@@ -860,7 +860,7 @@ describe('seller listing readiness endpoint', () => {
     const failureDatabase = createDatabaseClient(testDatabaseUrl);
 
     class FailingImageStore extends PrivateListingImageFileStore {
-      override async isStored(_storageKey: string): Promise<boolean> {
+      override async isStored(): Promise<boolean> {
         throw new Error('Synthetic storage I/O failure.');
       }
     }
@@ -890,12 +890,9 @@ describe('seller listing readiness endpoint', () => {
     const seller = await createSeller();
     const listing = await createListing(seller);
 
-    const response = await request(
-      seller,
-      'POST',
-      `/api/v1/seller/listings/${listing.id}/submit`,
-      { expectedDraftRevision: listing.draft!.revision },
-    );
+    const response = await request(seller, 'POST', `/api/v1/seller/listings/${listing.id}/submit`, {
+      expectedDraftRevision: listing.draft!.revision,
+    });
 
     expect(response.statusCode, response.body).toBe(400);
     const body = response.json<{
@@ -1335,10 +1332,7 @@ describe('seller listing readiness endpoint', () => {
       .from(sellerListingRevisions)
       .where(eq(sellerListingRevisions.listingId, prepared.listing.id))
       .orderBy(sellerListingRevisions.revision);
-    expect(history.map((row) => row.revision)).toEqual([
-      prepared.draftRevision,
-      correctedRevision,
-    ]);
+    expect(history.map((row) => row.revision)).toEqual([prepared.draftRevision, correctedRevision]);
 
     const retainedOutcome = await getDatabase()
       .db.select({ decision: sellerListingReviewOutcomes.decision })
@@ -1424,7 +1418,9 @@ describe('seller listing readiness endpoint', () => {
     expect(rejectedRevisionAfter).toEqual(rejectedRevisionBefore);
 
     const detail = await request(seller, 'GET', `/api/v1/seller/listings/${prepared.listing.id}`);
-    expect(detail.json<ListingWorkflowDetailResponse>().data.listing.latestReviewOutcome).toMatchObject({
+    expect(
+      detail.json<ListingWorkflowDetailResponse>().data.listing.latestReviewOutcome,
+    ).toMatchObject({
       revisionId: submission.pendingSubmission.id,
       decision: 'rejected',
       feedback: 'The submitted product information cannot be approved.',

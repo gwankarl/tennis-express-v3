@@ -1,5 +1,4 @@
 import { sellerListingCondition, sellerListingStatus } from './listing.table.js';
-import type { ListingCompletenessResult } from './listing-completeness.js';
 
 const nullableTitle = {
   anyOf: [{ type: 'string', minLength: 1, maxLength: 120, pattern: '\\S' }, { type: 'null' }],

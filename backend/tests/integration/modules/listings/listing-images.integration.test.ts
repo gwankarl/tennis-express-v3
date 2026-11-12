@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import sharp from 'sharp';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -22,14 +22,10 @@ import { createCatalogProduct } from '../../../../src/modules/catalog/product.se
 import { identityUsers } from '../../../../src/modules/identity/accounts/user.table.js';
 import { createSession } from '../../../../src/modules/identity/sessions/session.service.js';
 import {
-  sellerListingDraftImages,
   sellerListingImages,
   sellerListingRevisionImages,
 } from '../../../../src/modules/listings/listing-image.table.js';
-import {
-  sellerListingRevisions,
-  sellerListingVariants,
-} from '../../../../src/modules/listings/listing.table.js';
+import { sellerListingRevisions } from '../../../../src/modules/listings/listing.table.js';
 import { cleanupSellerListingImages } from '../../../../src/modules/listings/listing-image-read.service.js';
 import { sellerApplications } from '../../../../src/modules/seller-onboarding/application.table.js';
 import { sellerOperatingAccess } from '../../../../src/modules/seller-onboarding/review.table.js';

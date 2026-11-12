@@ -135,8 +135,7 @@ export async function createSellerListingDraftFromRevision(
     if (
       !sourceRevision ||
       (!approvedSource &&
-        (!outcome ||
-          (outcome.decision !== 'changes_requested' && outcome.decision !== 'rejected')))
+        (!outcome || (outcome.decision !== 'changes_requested' && outcome.decision !== 'rejected')))
     ) {
       throw new SellerListingServiceError(409, 'sourceRevisionId', 'reviewed_revision_required');
     }
