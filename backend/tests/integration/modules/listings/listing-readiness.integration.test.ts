@@ -63,6 +63,11 @@ interface ListingResponse {
     listing: {
       id: string;
       status: string;
+      controlRevision: number;
+      approvedRevisionId: string | null;
+      pausedAt: string | null;
+      archivedAt: string | null;
+      administratorRemovedAt: string | null;
       draft: {
         revision: number;
         catalogProductId: string;
@@ -385,6 +390,296 @@ afterAll(async () => {
 });
 
 describe('seller listing readiness endpoint', () => {
+  it('applies versioned pause, resume, archive, and restore without changing approval history', async () => {
+    type ControlResponse = {
+      data: {
+        listing: Pick<
+          ListingResponse['data']['listing'],
+          | 'id'
+          | 'status'
+          | 'controlRevision'
+          | 'approvedRevisionId'
+          | 'pausedAt'
+          | 'archivedAt'
+          | 'administratorRemovedAt'
+        >;
+      };
+    };
+
+    const seller = await createSeller();
+    const otherSeller = await createSeller();
+    const ineligibleSeller = await createSeller(false);
+    const prepared = await createCompleteDraft(seller);
+
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    const revisionId = submitted.json<SubmissionResponse>().data.pendingSubmission.id;
+
+    const [beforeApproval] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    await getDatabase()
+      .db.update(sellerListings)
+      .set({ status: 'approved', controlRevision: beforeApproval!.controlRevision + 1 })
+      .where(eq(sellerListings.id, prepared.listing.id));
+    await getDatabase().db.insert(sellerListingApprovedRevisions).values({
+      listingId: prepared.listing.id,
+      revisionId,
+    });
+
+    const [approvedState] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+    const base = `/api/v1/seller/listings/${prepared.listing.id}`;
+
+    const foreign = await request(otherSeller, 'POST', `${base}/pause`, {
+      expectedControlRevision: approvedState!.controlRevision,
+    });
+    const unknown = await request(
+      otherSeller,
+      'POST',
+      `/api/v1/seller/listings/${randomUUID()}/pause`,
+      { expectedControlRevision: approvedState!.controlRevision },
+    );
+    const denied = await request(ineligibleSeller, 'POST', `${base}/pause`, {
+      expectedControlRevision: approvedState!.controlRevision,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(unknown.statusCode).toBe(404);
+    expect(foreign.json<{ error: unknown }>().error).toEqual(
+      unknown.json<{ error: unknown }>().error,
+    );
+    expect(denied.statusCode).toBe(403);
+
+    const competingPauses = await Promise.all([
+      request(seller, 'POST', `${base}/pause`, {
+        expectedControlRevision: approvedState!.controlRevision,
+      }),
+      request(seller, 'POST', `${base}/pause`, {
+        expectedControlRevision: approvedState!.controlRevision,
+      }),
+    ]);
+    expect(competingPauses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+
+    const paused = competingPauses.find((response) => response.statusCode === 200);
+    expect(paused).toBeDefined();
+    const pausedListing = paused!.json<ControlResponse>().data.listing;
+    expect(pausedListing).toMatchObject({
+      status: 'approved',
+      controlRevision: approvedState!.controlRevision + 1,
+      approvedRevisionId: revisionId,
+      archivedAt: null,
+    });
+    expect(pausedListing.pausedAt).not.toBeNull();
+
+    const staleResume = await request(seller, 'POST', `${base}/resume`, {
+      expectedControlRevision: approvedState!.controlRevision,
+    });
+    expect(staleResume.statusCode).toBe(409);
+
+    const duplicatePause = await request(seller, 'POST', `${base}/pause`, {
+      expectedControlRevision: pausedListing.controlRevision,
+    });
+    expect(duplicatePause.statusCode).toBe(409);
+
+    const archived = await request(seller, 'POST', `${base}/archive`, {
+      expectedControlRevision: pausedListing.controlRevision,
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+    const archivedListing = archived.json<ControlResponse>().data.listing;
+    expect(archivedListing).toMatchObject({
+      status: 'approved',
+      controlRevision: pausedListing.controlRevision + 1,
+      approvedRevisionId: revisionId,
+      pausedAt: pausedListing.pausedAt,
+    });
+    expect(archivedListing.archivedAt).not.toBeNull();
+
+    const duplicateArchive = await request(seller, 'POST', `${base}/archive`, {
+      expectedControlRevision: archivedListing.controlRevision,
+    });
+    expect(duplicateArchive.statusCode).toBe(409);
+
+    const restored = await request(seller, 'POST', `${base}/restore`, {
+      expectedControlRevision: archivedListing.controlRevision,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    const restoredListing = restored.json<ControlResponse>().data.listing;
+    expect(restoredListing).toMatchObject({
+      status: 'approved',
+      controlRevision: archivedListing.controlRevision + 1,
+      approvedRevisionId: revisionId,
+      pausedAt: pausedListing.pausedAt,
+      archivedAt: null,
+    });
+
+    const resumed = await request(seller, 'POST', `${base}/resume`, {
+      expectedControlRevision: restoredListing.controlRevision,
+    });
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    const resumedListing = resumed.json<ControlResponse>().data.listing;
+    expect(resumedListing).toMatchObject({
+      status: 'approved',
+      controlRevision: restoredListing.controlRevision + 1,
+      approvedRevisionId: revisionId,
+      pausedAt: null,
+      archivedAt: null,
+    });
+
+    const archiveAgain = await request(seller, 'POST', `${base}/archive`, {
+      expectedControlRevision: resumedListing.controlRevision,
+    });
+    expect(archiveAgain.statusCode, archiveAgain.body).toBe(200);
+    const archivedAgain = archiveAgain.json<ControlResponse>().data.listing;
+
+    await getDatabase()
+      .db.update(sellerListings)
+      .set({
+        administratorRemovedAt: new Date(),
+        controlRevision: archivedAgain.controlRevision + 1,
+      })
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    const restoreRemoved = await request(seller, 'POST', `${base}/restore`, {
+      expectedControlRevision: archivedAgain.controlRevision + 1,
+    });
+    expect(restoreRemoved.statusCode).toBe(409);
+
+    const [revision] = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, revisionId));
+    const [image] = await getDatabase()
+      .db.select()
+      .from(sellerListingImages)
+      .where(eq(sellerListingImages.id, prepared.imageId));
+    expect(revision).toBeDefined();
+    expect(image).toBeDefined();
+    expect(await getFileStore().isStored(image!.storageKey)).toBe(true);
+  });
+
+  it('archives and restores a pending submission without cancelling it or changing its draft', async () => {
+    type ControlResponse = {
+      data: {
+        listing: Pick<
+          ListingResponse['data']['listing'],
+          'status' | 'controlRevision' | 'approvedRevisionId' | 'pausedAt' | 'archivedAt'
+        >;
+      };
+    };
+
+    const seller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+    const revisionId = submitted.json<SubmissionResponse>().data.pendingSubmission.id;
+
+    const [beforeArchive] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+    const base = `/api/v1/seller/listings/${prepared.listing.id}`;
+
+    const archived = await request(seller, 'POST', `${base}/archive`, {
+      expectedControlRevision: beforeArchive!.controlRevision,
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+    const archivedListing = archived.json<ControlResponse>().data.listing;
+    expect(archivedListing).toMatchObject({
+      status: 'submitted',
+      controlRevision: beforeArchive!.controlRevision + 1,
+      approvedRevisionId: null,
+      pausedAt: null,
+    });
+    expect(archivedListing.archivedAt).not.toBeNull();
+
+    const [draft] = await getDatabase()
+      .db.select({ revision: sellerListingDrafts.revision })
+      .from(sellerListingDrafts)
+      .where(eq(sellerListingDrafts.listingId, prepared.listing.id));
+    const [revision] = await getDatabase()
+      .db.select({ id: sellerListingRevisions.id })
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, revisionId));
+    expect(draft?.revision).toBe(prepared.draftRevision);
+    expect(revision?.id).toBe(revisionId);
+
+    const restored = await request(seller, 'POST', `${base}/restore`, {
+      expectedControlRevision: archivedListing.controlRevision,
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json<ControlResponse>().data.listing).toMatchObject({
+      status: 'submitted',
+      approvedRevisionId: null,
+      pausedAt: null,
+      archivedAt: null,
+    });
+  });
+
+  it('does not restore an archived listing after Seller access is suspended', async () => {
+    const seller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+
+    const [beforeArchive] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+    expect(beforeArchive).toBeDefined();
+
+    const base = `/api/v1/seller/listings/${prepared.listing.id}`;
+    const archived = await request(seller, 'POST', `${base}/archive`, {
+      expectedControlRevision: beforeArchive!.controlRevision,
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+
+    const archivedListing = archived.json<{
+      data: { listing: { controlRevision: number; archivedAt: string | null } };
+    }>().data.listing;
+    expect(archivedListing.archivedAt).not.toBeNull();
+
+    await getDatabase()
+      .db.update(sellerOperatingAccess)
+      .set({ status: 'suspended', updatedAt: new Date() })
+      .where(eq(sellerOperatingAccess.userId, seller.id));
+
+    const restore = await request(seller, 'POST', `${base}/restore`, {
+      expectedControlRevision: archivedListing.controlRevision,
+    });
+    expect(restore.statusCode).toBe(403);
+
+    const [afterRestoreAttempt] = await getDatabase()
+      .db.select({
+        controlRevision: sellerListings.controlRevision,
+        archivedAt: sellerListings.archivedAt,
+      })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    expect(afterRestoreAttempt?.controlRevision).toBe(archivedListing.controlRevision);
+    expect(afterRestoreAttempt?.archivedAt).toEqual(new Date(archivedListing.archivedAt!));
+  });
+
   it('returns a complete result for a default configuration and zero stock without mutating state', async () => {
     const seller = await createSeller();
     const listing = await createListing(seller, {
@@ -756,6 +1051,162 @@ describe('seller listing readiness endpoint', () => {
       },
       latestReviewOutcome: null,
     });
+  });
+
+  it('copies the current approved revision into a replacement draft without changing published history', async () => {
+    const seller = await createSeller();
+    const prepared = await createCompleteDraft(seller);
+
+    const submitted = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/submit`,
+      { expectedDraftRevision: prepared.draftRevision },
+    );
+    expect(submitted.statusCode, submitted.body).toBe(200);
+
+    const submission = submitted.json<SubmissionResponse>().data;
+    const approvedRevisionId = submission.pendingSubmission.id;
+
+    const [revisionBefore] = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, approvedRevisionId));
+
+    const configurationsBefore = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionConfigurations)
+      .where(eq(sellerListingRevisionConfigurations.revisionId, approvedRevisionId));
+
+    const offersBefore = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionOffers)
+      .where(eq(sellerListingRevisionOffers.revisionId, approvedRevisionId));
+
+    const imagesBefore = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionImages)
+      .where(eq(sellerListingRevisionImages.revisionId, approvedRevisionId));
+
+    const [listingBeforeApproval] = await getDatabase()
+      .db.select({
+        controlRevision: sellerListings.controlRevision,
+      })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    await getDatabase()
+      .db.update(sellerListings)
+      .set({
+        status: 'approved',
+        controlRevision: listingBeforeApproval!.controlRevision + 1,
+      })
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    await getDatabase().db.insert(sellerListingApprovedRevisions).values({
+      listingId: prepared.listing.id,
+      revisionId: approvedRevisionId,
+    });
+
+    const [listingBeforeDraft] = await getDatabase()
+      .db.select({ controlRevision: sellerListings.controlRevision })
+      .from(sellerListings)
+      .where(eq(sellerListings.id, prepared.listing.id));
+
+    const created = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/draft`,
+      {
+        sourceApprovedRevisionId: approvedRevisionId,
+        expectedControlRevision: listingBeforeDraft!.controlRevision,
+      },
+    );
+
+    expect(created.statusCode, created.body).toBe(200);
+
+    const listing = created.json<ListingResponse>().data.listing;
+    expect(listing).toMatchObject({
+      status: 'draft',
+      controlRevision: listingBeforeDraft!.controlRevision + 1,
+      approvedRevisionId,
+      draft: {
+        revision: submission.pendingSubmission.revision + 1,
+        catalogProductId,
+        catalogVariantIds: [catalogVariantId],
+        title: prepared.listing.draft!.title,
+        condition: 'new',
+      },
+    });
+
+    const [revisionAfter] = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisions)
+      .where(eq(sellerListingRevisions.id, approvedRevisionId));
+
+    const configurationsAfter = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionConfigurations)
+      .where(eq(sellerListingRevisionConfigurations.revisionId, approvedRevisionId));
+
+    const offersAfter = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionOffers)
+      .where(eq(sellerListingRevisionOffers.revisionId, approvedRevisionId));
+
+    const imagesAfter = await getDatabase()
+      .db.select()
+      .from(sellerListingRevisionImages)
+      .where(eq(sellerListingRevisionImages.revisionId, approvedRevisionId));
+
+    expect(revisionAfter).toEqual(revisionBefore);
+    expect(configurationsAfter).toEqual(configurationsBefore);
+    expect(offersAfter).toEqual(offersBefore);
+    expect(imagesAfter).toEqual(imagesBefore);
+
+    const draftImages = await getDatabase()
+      .db.select()
+      .from(sellerListingDraftImages)
+      .where(eq(sellerListingDraftImages.listingId, prepared.listing.id));
+
+    expect(draftImages).toMatchObject([
+      {
+        imageId: prepared.imageId,
+        variantId: null,
+        sortOrder: 0,
+        isCover: true,
+      },
+    ]);
+
+    const [storedImage] = await getDatabase()
+      .db.select()
+      .from(sellerListingImages)
+      .where(eq(sellerListingImages.id, prepared.imageId));
+
+    expect(storedImage).toBeDefined();
+    expect(await getFileStore().isStored(storedImage!.storageKey)).toBe(true);
+
+    const stalePointer = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/draft`,
+      {
+        sourceApprovedRevisionId: randomUUID(),
+        expectedControlRevision: listing.controlRevision,
+      },
+    );
+    expect(stalePointer.statusCode).toBe(409);
+
+    const duplicate = await request(
+      seller,
+      'POST',
+      `/api/v1/seller/listings/${prepared.listing.id}/draft`,
+      {
+        sourceApprovedRevisionId: approvedRevisionId,
+        expectedControlRevision: listing.controlRevision,
+      },
+    );
+    expect(duplicate.statusCode).toBe(409);
   });
 
   it('copies a reviewed revision to a new draft and retains its files and outcome history', async () => {

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { DatabaseClient } from '../../infrastructure/database/client.js';
 import {
+  sellerListingApprovedRevisions,
   sellerListingDraftConfigurations,
   sellerListingDrafts,
   sellerListingRevisionConfigurations,
@@ -18,10 +19,17 @@ import { getSellerListing, SellerListingServiceError } from './listing.service.j
 type ListingDatabase = DatabaseClient['db'];
 type ListingTransaction = Parameters<Parameters<ListingDatabase['transaction']>[0]>[0];
 
-export interface CreateSellerListingCorrectionDraftInput {
-  sourceRevisionId: string;
-  expectedControlRevision: number;
-}
+export type CreateSellerListingDraftInput =
+  | {
+      sourceApprovedRevisionId: string;
+      sourceRevisionId?: never;
+      expectedControlRevision: number;
+    }
+  | {
+      sourceRevisionId: string;
+      sourceApprovedRevisionId?: never;
+      expectedControlRevision: number;
+    };
 
 export interface SellerListingWorkflowDetail {
   listing: Awaited<ReturnType<typeof getSellerListing>> & {
@@ -41,15 +49,16 @@ export interface SellerListingWorkflowDetail {
 }
 
 /**
- * Copies the exact reviewed revision into the listing's editable draft.
- * The listing lock serializes this transition with seller edits and review
- * decisions. Submitted revision rows and their image references remain intact.
+ * Copies the current approved revision or the latest reviewed revision into
+ * the listing's editable draft. The listing lock serializes this transition
+ * with seller edits, submission, and review decisions. Immutable revisions
+ * and their image references remain intact.
  */
-export async function createSellerListingCorrectionDraft(
+export async function createSellerListingDraftFromRevision(
   db: ListingDatabase,
   sellerId: string,
   listingId: string,
-  input: CreateSellerListingCorrectionDraftInput,
+  input: CreateSellerListingDraftInput,
 ): Promise<void> {
   if (!Number.isSafeInteger(input.expectedControlRevision) || input.expectedControlRevision < 1) {
     throw new SellerListingServiceError(400, 'expectedControlRevision', 'invalid_revision');
@@ -71,7 +80,31 @@ export async function createSellerListingCorrectionDraft(
       throw new SellerListingServiceError(409, 'expectedControlRevision', 'stale_revision');
     }
 
-    if (listing.status !== 'changes_requested' && listing.status !== 'rejected') {
+    const approvedSource = typeof input.sourceApprovedRevisionId === 'string';
+    const sourceRevisionId = approvedSource
+      ? input.sourceApprovedRevisionId
+      : input.sourceRevisionId;
+
+    if (approvedSource) {
+      if (listing.status !== 'approved') {
+        throw new SellerListingServiceError(409, 'status', 'replacement_draft_not_allowed');
+      }
+
+      const [approvedPointer] = await tx
+        .select({ revisionId: sellerListingApprovedRevisions.revisionId })
+        .from(sellerListingApprovedRevisions)
+        .where(eq(sellerListingApprovedRevisions.listingId, listingId))
+        .for('update')
+        .limit(1);
+
+      if (approvedPointer?.revisionId !== sourceRevisionId) {
+        throw new SellerListingServiceError(
+          409,
+          'sourceApprovedRevisionId',
+          'stale_approved_revision',
+        );
+      }
+    } else if (listing.status !== 'changes_requested' && listing.status !== 'rejected') {
       throw new SellerListingServiceError(409, 'status', 'correction_draft_not_allowed');
     }
 
@@ -80,27 +113,30 @@ export async function createSellerListingCorrectionDraft(
       .from(sellerListingRevisions)
       .where(
         and(
-          eq(sellerListingRevisions.id, input.sourceRevisionId),
+          eq(sellerListingRevisions.id, sourceRevisionId),
           eq(sellerListingRevisions.listingId, listingId),
         ),
       )
       .limit(1);
 
-    const [outcome] = await tx
-      .select({ decision: sellerListingReviewOutcomes.decision })
-      .from(sellerListingReviewOutcomes)
-      .where(
-        and(
-          eq(sellerListingReviewOutcomes.revisionId, input.sourceRevisionId),
-          eq(sellerListingReviewOutcomes.listingId, listingId),
-        ),
-      )
-      .limit(1);
+    const [outcome] = approvedSource
+      ? []
+      : await tx
+          .select({ decision: sellerListingReviewOutcomes.decision })
+          .from(sellerListingReviewOutcomes)
+          .where(
+            and(
+              eq(sellerListingReviewOutcomes.revisionId, sourceRevisionId),
+              eq(sellerListingReviewOutcomes.listingId, listingId),
+            ),
+          )
+          .limit(1);
 
     if (
       !sourceRevision ||
-      !outcome ||
-      (outcome.decision !== 'changes_requested' && outcome.decision !== 'rejected')
+      (!approvedSource &&
+        (!outcome ||
+          (outcome.decision !== 'changes_requested' && outcome.decision !== 'rejected')))
     ) {
       throw new SellerListingServiceError(409, 'sourceRevisionId', 'reviewed_revision_required');
     }

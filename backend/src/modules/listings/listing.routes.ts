@@ -34,9 +34,13 @@ import {
 } from './listing-image-read.service.js';
 import { getSellerListingReadiness } from './listing-readiness.service.js';
 import {
-  createSellerListingCorrectionDraft,
+  applySellerListingControl,
+  type UpdateSellerListingControlInput,
+} from './listing-control.service.js';
+import {
+  createSellerListingDraftFromRevision,
   getSellerListingWorkflowDetail,
-  type CreateSellerListingCorrectionDraftInput,
+  type CreateSellerListingDraftInput,
 } from './listing-workflow.service.js';
 import {
   ListingSubmissionIncompleteError,
@@ -45,7 +49,7 @@ import {
 } from './listing-submission.service.js';
 import {
   createSellerListingRequestSchema,
-  createSellerListingCorrectionDraftRequestSchema,
+  createSellerListingDraftRequestSchema,
   patchSellerListingVariantRequestSchema,
   sellerListingIdParamsSchema,
   sellerListingListResponseSchema,
@@ -64,6 +68,8 @@ import {
   sellerListingReadinessResponseSchema,
   submitSellerListingRequestSchema,
   submitSellerListingResponseSchema,
+  sellerListingControlResponseSchema,
+  updateSellerListingControlRequestSchema,
 } from './listing.schema.js';
 
 interface ListingImageParams extends ListingParams {
@@ -181,6 +187,60 @@ function sendServiceError(
 }
 
 export function registerSellerListingRoutes(app: FastifyInstance): void {
+  const controlActions = ['pause', 'resume', 'archive', 'restore'] as const;
+  const controlSummaries = {
+    pause: 'Pause sales for an approved listing',
+    resume: 'Resume sales for a paused listing',
+    archive: 'Archive an owned listing',
+    restore: 'Restore an archived listing',
+  } satisfies Record<(typeof controlActions)[number], string>;
+
+  for (const action of controlActions) {
+    app.post<{ Params: ListingParams; Body: UpdateSellerListingControlInput }>(
+      `/api/v1/seller/listings/:id/${action}`,
+      {
+        preHandler: requireWorkspaceAccess('seller'),
+        schema: {
+          tags: ['Seller listings'],
+          summary: controlSummaries[action],
+          params: sellerListingIdParamsSchema,
+          body: updateSellerListingControlRequestSchema,
+          response: {
+            200: sellerListingControlResponseSchema,
+            400: apiErrorResponseSchema,
+            401: apiErrorResponseSchema,
+            403: apiErrorResponseSchema,
+            404: apiErrorResponseSchema,
+            409: apiErrorResponseSchema,
+            500: apiErrorResponseSchema,
+            503: apiErrorResponseSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        reply.header('cache-control', 'private, no-store');
+
+        if (!app.db || !request.identitySession) {
+          return reply.code(503).send(requestError(request.id));
+        }
+
+        try {
+          const listing = await applySellerListingControl(
+            app.db,
+            request.identitySession.userId,
+            request.params.id,
+            action,
+            request.body,
+          );
+
+          return reply.code(200).send({ data: { listing } });
+        } catch (error) {
+          return sendServiceError(error, request, reply);
+        }
+      },
+    );
+  }
+
   app.post<{ Body: CreateSellerListingInput }>(
     '/api/v1/seller/listings',
     {
@@ -306,16 +366,16 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: ListingParams;
-    Body: CreateSellerListingCorrectionDraftInput;
+    Body: CreateSellerListingDraftInput;
   }>(
     '/api/v1/seller/listings/:id/draft',
     {
       preHandler: requireWorkspaceAccess('seller'),
       schema: {
         tags: ['Seller listings'],
-        summary: 'Start a correction draft from a reviewed revision',
+        summary: 'Start a draft from an approved or reviewed revision',
         params: sellerListingIdParamsSchema,
-        body: createSellerListingCorrectionDraftRequestSchema,
+        body: createSellerListingDraftRequestSchema,
         response: {
           200: sellerListingResponseSchema,
           400: apiErrorResponseSchema,
@@ -336,7 +396,7 @@ export function registerSellerListingRoutes(app: FastifyInstance): void {
       }
 
       try {
-        await createSellerListingCorrectionDraft(
+        await createSellerListingDraftFromRevision(
           app.db,
           request.identitySession.userId,
           request.params.id,

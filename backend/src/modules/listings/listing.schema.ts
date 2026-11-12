@@ -327,11 +327,7 @@ export const sellerListingResponseSchema = {
 const sellerListingDetailSchema = {
   type: 'object',
   additionalProperties: false,
-  required: [
-    ...sellerListingSchema.required,
-    'pendingSubmission',
-    'latestReviewOutcome',
-  ],
+  required: [...sellerListingSchema.required, 'pendingSubmission', 'latestReviewOutcome'],
   properties: {
     ...sellerListingSchema.properties,
     pendingSubmission: {
@@ -386,13 +382,70 @@ export const sellerListingDetailResponseSchema = {
   },
 } as const;
 
-export const createSellerListingCorrectionDraftRequestSchema = {
+export const createSellerListingDraftRequestSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['sourceRevisionId', 'expectedControlRevision'],
+  required: ['expectedControlRevision'],
   properties: {
+    sourceApprovedRevisionId: { type: 'string', format: 'uuid' },
     sourceRevisionId: { type: 'string', format: 'uuid' },
     expectedControlRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+  },
+  oneOf: [
+    {
+      required: ['sourceApprovedRevisionId'],
+      not: { required: ['sourceRevisionId'] },
+    },
+    {
+      required: ['sourceRevisionId'],
+      not: { required: ['sourceApprovedRevisionId'] },
+    },
+  ],
+} as const;
+
+export const updateSellerListingControlRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['expectedControlRevision'],
+  properties: {
+    expectedControlRevision: { type: 'integer', minimum: 1, maximum: 2_147_483_647 },
+  },
+} as const;
+
+export const sellerListingControlResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['data'],
+  properties: {
+    data: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['listing'],
+      properties: {
+        listing: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'id',
+            'status',
+            'controlRevision',
+            'approvedRevisionId',
+            'pausedAt',
+            'archivedAt',
+            'administratorRemovedAt',
+          ],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            status: { type: 'string', enum: sellerListingStatus.enumValues },
+            controlRevision: { type: 'integer', minimum: 1 },
+            approvedRevisionId: { type: ['string', 'null'], format: 'uuid' },
+            pausedAt: { type: ['string', 'null'], format: 'date-time' },
+            archivedAt: { type: ['string', 'null'], format: 'date-time' },
+            administratorRemovedAt: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+      },
+    },
   },
 } as const;
 

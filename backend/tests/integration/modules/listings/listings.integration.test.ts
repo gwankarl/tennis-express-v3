@@ -352,12 +352,10 @@ describe('seller listing drafts', () => {
     const denied = await request(ineligibleSeller, 'GET', '/api/v1/seller/listings');
     expect(denied.statusCode).toBe(403);
 
-    const deniedVariantUpdate = await patchVariant(
-      ineligibleSeller,
-      randomUUID(),
-      randomUUID(),
-      { expectedVersion: 1, stockQuantity: 1 },
-    );
+    const deniedVariantUpdate = await patchVariant(ineligibleSeller, randomUUID(), randomUUID(), {
+      expectedVersion: 1,
+      stockQuantity: 1,
+    });
     expect(deniedVariantUpdate.statusCode).toBe(403);
   });
 
@@ -384,7 +382,13 @@ describe('seller listing drafts', () => {
 
     const detail = await request(seller, 'GET', `/api/v1/seller/listings/${listing.id}`);
     expect(detail.statusCode, detail.body).toBe(200);
-    expect(detail.json<ListingResponse>().data.listing).toEqual(listing);
+    const detailListing = detail.json<ListingResponse>().data.listing;
+
+    expect(detailListing).toMatchObject(listing);
+    expect(detailListing).toMatchObject({
+      pendingSubmission: null,
+      latestReviewOutcome: null,
+    });
   });
 
   it('paginates only the seller’s listings in deterministic order', async () => {
@@ -619,7 +623,9 @@ describe('seller listing drafts', () => {
       { expectedDraftRevision: 1, catalogVariantIds: [catalogVariantIds[0]!] },
     );
     expect(removeSecond.statusCode, removeSecond.body).toBe(200);
-    expect(removeSecond.json<ListingResponse>().data.listing.draft?.sellableVariants).toHaveLength(1);
+    expect(removeSecond.json<ListingResponse>().data.listing.draft?.sellableVariants).toHaveLength(
+      1,
+    );
 
     const restore = await request(seller, 'PATCH', `/api/v1/seller/listings/${initial.id}/draft`, {
       expectedDraftRevision: 2,
@@ -647,8 +653,12 @@ describe('seller listing drafts', () => {
     expect(created.statusCode, created.body).toBe(201);
     const listing = created.json<ListingResponse>().data.listing;
     const variants = listing.draft?.sellableVariants ?? [];
-    const approvedVariant = variants.find((variant) => variant.catalogVariantId === catalogVariantIds[0]);
-    const pendingVariant = variants.find((variant) => variant.catalogVariantId === catalogVariantIds[1]);
+    const approvedVariant = variants.find(
+      (variant) => variant.catalogVariantId === catalogVariantIds[0],
+    );
+    const pendingVariant = variants.find(
+      (variant) => variant.catalogVariantId === catalogVariantIds[1],
+    );
     expect(approvedVariant).toBeDefined();
     expect(pendingVariant).toBeDefined();
 
@@ -662,7 +672,9 @@ describe('seller listing drafts', () => {
       isOfferedForSale: true,
     });
     expect(approvedUpdate.statusCode, approvedUpdate.body).toBe(200);
-    expect(approvedUpdate.json<{ data: { variant: SellableVariant } }>().data.variant).toMatchObject({
+    expect(
+      approvedUpdate.json<{ data: { variant: SellableVariant } }>().data.variant,
+    ).toMatchObject({
       id: approvedVariant!.id,
       sku: 'RACKET-01',
       priceXaf: 25_000,
@@ -746,19 +758,19 @@ describe('seller listing drafts', () => {
       otherVariant.id,
       { expectedVersion: 1, stockQuantity: 10 },
     );
-    const unknownVariantOnOwnedListing = await patchVariant(
-      seller,
-      firstListing.id,
-      randomUUID(),
-      { expectedVersion: 1, stockQuantity: 10 },
-    );
+    const unknownVariantOnOwnedListing = await patchVariant(seller, firstListing.id, randomUUID(), {
+      expectedVersion: 1,
+      stockQuantity: 10,
+    });
     const unknown = await patchVariant(otherSeller, randomUUID(), randomUUID(), {
       expectedVersion: 1,
       stockQuantity: 10,
     });
     expect(foreign.statusCode).toBe(404);
     expect(unknown.statusCode).toBe(404);
-    expect(foreign.json<{ error: unknown }>().error).toEqual(unknown.json<{ error: unknown }>().error);
+    expect(foreign.json<{ error: unknown }>().error).toEqual(
+      unknown.json<{ error: unknown }>().error,
+    );
     expect(foreignVariantOnOwnedListing.statusCode).toBe(404);
     expect(unknownVariantOnOwnedListing.statusCode).toBe(404);
     expect(foreignVariantOnOwnedListing.json<{ error: unknown }>().error).toEqual(
